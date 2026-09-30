@@ -1,0 +1,1426 @@
+"use client"
+
+import {
+  createSlice,
+  createAsyncThunk,
+  type PayloadAction,
+  type ThunkDispatch,
+  type AnyAction,
+} from "@reduxjs/toolkit"
+import { useDispatch, useSelector } from "react-redux"
+import { useCallback, useEffect, useMemo } from "react"
+import type { TintKey, IconKey } from "../../components/Ui/project-data"
+
+/* -------------------------------------------------------------------------- */
+/* Types                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "ON_HOLD" | "COMPLETED"
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+
+export interface Workspace {
+  id: string
+  name: string
+  description: string | null
+  tint: TintKey
+  icon: IconKey
+  createdAt: number
+  updatedAt: number
+}
+
+export interface WorkspaceInput {
+  name: string
+  description?: string
+  tint?: TintKey
+  icon?: IconKey
+}
+
+export type WorkspacePatch = Partial<WorkspaceInput>
+
+export interface Task {
+  id: string
+  workspaceId: string
+  title: string
+  description: string
+  status: TaskStatus
+  priority: TaskPriority
+  position: number
+  startDate: number | null
+  deadlineDate: number | null
+  plannedDurationSeconds: number
+  actualDurationSeconds: number
+  startedAt: number | null
+  completedAt: number | null
+  createdAt: number
+}
+
+export type TimerPhase = "stopped" | "running" | "paused"
+
+export interface TimerState {
+  taskId: string | null
+  phase: TimerPhase
+  startedAt: number | null
+  accumulatedSeconds: number
+  lastCheckTime: number | null
+  isStale: boolean
+}
+
+/* -------------------------------------------------------------------------- */
+/* Constants + pure helpers                                                   */
+/* -------------------------------------------------------------------------- */
+
+export const CHECK_INTERVAL_MS = 2 * 60 * 1000
+export const RESPONSE_WINDOW_MS = 30 * 1000
+
+export const COMPLETE_UNLOCK_RATIO = 0.75
+
+export const STATUS_ORDER: TaskStatus[] = [
+  "TODO",
+  "IN_PROGRESS",
+  "ON_HOLD",
+  "COMPLETED",
+]
+
+export const STATUS_META: Record<
+  TaskStatus,
+  { title: string; accent: string; tint: string }
+> = {
+  TODO: {
+    title: "To Do",
+    accent: "var(--color-muted-foreground)",
+    tint: "var(--color-muted)",
+  },
+  IN_PROGRESS: {
+    title: "In Progress",
+    accent: "var(--color-primary)",
+    tint: "var(--color-primary-soft)",
+  },
+  ON_HOLD: {
+    title: "On Hold",
+    accent: "var(--color-warning)",
+    tint: "var(--color-warning-soft)",
+  },
+  COMPLETED: {
+    title: "Completed",
+    accent: "var(--color-success)",
+    tint: "var(--color-success-soft)",
+  },
+}
+
+export const PRIORITY_META: Record<
+  TaskPriority,
+  { label: string; color: string; bg: string }
+> = {
+  LOW: {
+    label: "Low",
+    color: "var(--color-success)",
+    bg: "var(--color-success-soft)",
+  },
+  MEDIUM: {
+    label: "Medium",
+    color: "var(--color-primary)",
+    bg: "var(--color-primary-soft)",
+  },
+  HIGH: {
+    label: "High",
+    color: "var(--color-warning)",
+    bg: "var(--color-warning-soft)",
+  },
+  URGENT: {
+    label: "Urgent",
+    color: "var(--color-destructive)",
+    bg: "var(--color-warning-soft)",
+  },
+}
+
+export function normalizeTimestamp(ts: number | null): number | null {
+  return ts
+}
+
+export function isLocked(status: TaskStatus): boolean {
+  return status === "COMPLETED"
+}
+
+export function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+
+  if (h > 0) return `${h}h ${m}m`
+
+  return `${m}m`
+}
+
+export function formatClock(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s
+      .toString()
+      .padStart(2, "0")}`
+  }
+
+  return `${m.toString().padStart(2, "0")}:${s
+    .toString()
+    .padStart(2, "0")}`
+}
+
+function spentSeconds(timer: TimerState): number {
+  if (timer.phase === "running" && timer.startedAt) {
+    return (
+      timer.accumulatedSeconds +
+      Math.max(0, Math.floor((Date.now() - timer.startedAt) / 1000))
+    )
+  }
+
+  return timer.accumulatedSeconds
+}
+
+export function taskSpentSeconds(task: Task, timer: TimerState): number {
+  return task.id === timer.taskId
+    ? spentSeconds(timer)
+    : task.actualDurationSeconds
+}
+
+function remainingSeconds(
+  task: Task | null | undefined,
+  timer: TimerState
+): number {
+  if (!task) return 0
+
+  const spent = taskSpentSeconds(task, timer)
+
+  return Math.max(0, task.plannedDurationSeconds - spent)
+}
+
+/**
+ * Only one task can be actively "in progress" (timed) at a time.
+ */
+export function isTaskStartAllowed(
+  tasks: Task[],
+  timer: TimerState,
+  targetTaskId: string
+): boolean {
+  const activeTask = tasks.find((t) => t.id === timer.taskId)
+
+  if (!activeTask) return true
+
+  if (activeTask.id === targetTaskId) return true
+
+  return false
+}
+
+/**
+ * A task can only move to COMPLETED once at least
+ * COMPLETE_UNLOCK_RATIO of its planned duration has been spent.
+ */
+export function canCompleteTask(
+  tasks: Task[],
+  timer: TimerState,
+  targetTaskId: string
+): boolean {
+  const task = tasks.find((t) => t.id === targetTaskId)
+
+  if (!task) return false
+
+  if (task.plannedDurationSeconds <= 0) return true
+
+  const spent = taskSpentSeconds(task, timer)
+
+  return spent >= task.plannedDurationSeconds * COMPLETE_UNLOCK_RATIO
+}
+
+export const IDLE_TIMER: TimerState = {
+  taskId: null,
+  phase: "stopped",
+  startedAt: null,
+  accumulatedSeconds: 0,
+  lastCheckTime: null,
+  isStale: false,
+}
+
+/* -------------------------------------------------------------------------- */
+/* API layer                                                                  */
+/* -------------------------------------------------------------------------- */
+
+// Backend runs on port 5000
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000"
+
+const TASKS_API = `${API_BASE_URL}/api/tasks`
+const WORKSPACES_API = `${API_BASE_URL}/api/workspaces`
+
+/**
+ * One request helper for both controllers:
+ *
+ * tasks controller:      raw JSON / { error }
+ * workspaces controller: { success, data, message }
+ * DELETE /tasks/:id:     204 with no body
+ */
+async function request<T>(
+  base: string,
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const response = await fetch(`${base}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  })
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.message ??
+        payload?.error ??
+        `Request failed (${response.status})`
+    )
+  }
+
+  if (payload && typeof payload === "object" && "success" in payload) {
+    if (!payload.success) {
+      throw new Error(payload.message ?? "Request failed")
+    }
+
+    return payload.data as T
+  }
+
+  return payload as T
+}
+
+function body(obj: unknown): RequestInit {
+  return {
+    body: JSON.stringify(obj),
+  }
+}
+
+interface ApiSession {
+  id: string
+  taskId?: string
+  startedAt: number | null
+  endedAt: number | null
+  committedSeconds: number
+}
+
+/**
+ * Shape returned by the tasks controller.
+ */
+interface ApiTask {
+  id: string
+  title: string
+  description: string | null
+  status: TaskStatus
+  priority: TaskPriority
+  workspaceId: string
+  position: number
+  createdAt: number | null
+  updatedAt: number | null
+  spentSeconds?: number
+  startDate?: number | null
+  deadlineDate?: number | null
+  plannedDurationSeconds?: number
+  actualDurationSeconds?: number
+  startedAt?: number | null
+  completedAt?: number | null
+}
+
+function toTask(raw: ApiTask, prev?: Task): Task {
+  return {
+    id: raw.id,
+    workspaceId: raw.workspaceId,
+    title: raw.title,
+    description: raw.description ?? "",
+    status: raw.status,
+    priority: raw.priority,
+    position: raw.position,
+
+    startDate: raw.startDate ?? prev?.startDate ?? null,
+
+    deadlineDate: raw.deadlineDate ?? prev?.deadlineDate ?? null,
+
+    plannedDurationSeconds:
+      raw.plannedDurationSeconds ?? prev?.plannedDurationSeconds ?? 0,
+
+    actualDurationSeconds:
+      raw.actualDurationSeconds ??
+      raw.spentSeconds ??
+      prev?.actualDurationSeconds ??
+      0,
+
+    startedAt: raw.startedAt ?? prev?.startedAt ?? null,
+
+    completedAt:
+      raw.completedAt ??
+      (raw.status === "COMPLETED" ? raw.updatedAt : null),
+
+    createdAt: raw.createdAt ?? prev?.createdAt ?? Date.now(),
+  }
+}
+
+export interface TaskInput {
+  title: string
+  description: string
+  priority: TaskPriority
+  plannedDurationSeconds: number
+  status: TaskStatus
+  workspaceId: string
+  startDate: number | null
+  deadlineDate: number | null
+}
+
+export type TaskPatch = Partial<
+  Pick<
+    Task,
+    | "title"
+    | "description"
+    | "workspaceId"
+    | "priority"
+    | "plannedDurationSeconds"
+    | "startDate"
+    | "deadlineDate"
+  >
+>
+
+/* -------------------------------------------------------------------------- */
+/* Slice state                                                                */
+/* -------------------------------------------------------------------------- */
+
+export type LoadStatus = "idle" | "loading" | "succeeded" | "failed"
+
+export interface TaskSliceState {
+  tasks: Task[]
+  workspaces: Workspace[]
+  timer: TimerState
+  status: LoadStatus
+  error: string | null
+  pendingIds: string[]
+}
+
+export interface TasksRootState {
+  tasks: TaskSliceState
+}
+
+const initialState: TaskSliceState = {
+  tasks: [],
+  workspaces: [],
+  timer: IDLE_TIMER,
+  status: "idle",
+  error: null,
+  pendingIds: [],
+}
+
+/**
+ * Keeps timer data consistent with the task list:
+ *  - no IN_PROGRESS task          -> timer is reset to idle
+ *  - timed task no longer running -> timer is reset to idle
+ * Called after every mutation of `state.tasks` and on every tick, so the
+ * timer can never keep "running" without an in-progress task.
+ */
+function syncTimer(state: TaskSliceState) {
+  const timer = state.timer
+  const isAlreadyIdle = timer.phase === "stopped" && timer.taskId === null
+
+  if (isAlreadyIdle) return
+
+  const inProgressIds = state.tasks
+    .filter((t) => t.status === "IN_PROGRESS")
+    .map((t) => t.id)
+
+  if (
+    inProgressIds.length === 0 ||
+    (timer.taskId && !inProgressIds.includes(timer.taskId))
+  ) {
+    state.timer = IDLE_TIMER
+  }
+}
+
+interface FetchPayload {
+  tasks: ApiTask[]
+  workspaces: Workspace[]
+  activeSession: ApiSession | null
+  activeAccumulatedSeconds: number
+}
+
+/**
+ * Loads tasks + workspaces + active session.
+ */
+export const fetchTasks = createAsyncThunk<
+  FetchPayload,
+  void,
+  { state: TasksRootState }
+>(
+  "tasks/fetch",
+  async (_arg, { getState }) => {
+    const [data, workspacesFromApi] = await Promise.all([
+      request<{
+        tasks: ApiTask[]
+        workspaces?: Workspace[]
+        activeSession?: ApiSession | null
+      }>(TASKS_API, ""),
+
+      // Workspaces live on their own endpoint
+      request<{ workspaces: Workspace[] }>(WORKSPACES_API, "")
+        .then((r) => r?.workspaces ?? null)
+        .catch(() => null),
+    ])
+
+    const activeSession = data.activeSession ?? null
+    let activeAccumulatedSeconds = 0
+
+    if (activeSession?.taskId) {
+      try {
+        const detail = await request<ApiTask>(
+          TASKS_API,
+          `/${activeSession.taskId}`
+        )
+        activeAccumulatedSeconds = Math.max(
+          0,
+          (detail.spentSeconds ?? 0) - (activeSession.committedSeconds ?? 0)
+        )
+      } catch {
+        activeAccumulatedSeconds = 0
+      }
+    }
+
+    // Priority: dedicated endpoint -> tasks endpoint -> existing state.
+    const resolvedWorkspaces: Workspace[] =
+      workspacesFromApi ??
+      data.workspaces ??
+      getState().tasks.workspaces ??
+      []
+
+    return {
+      tasks: data.tasks ?? [],
+      workspaces: resolvedWorkspaces,
+      activeSession,
+      activeAccumulatedSeconds,
+    }
+  },
+  {
+    condition: (_arg, { getState }) =>
+      getState().tasks.status !== "loading",
+  }
+)
+
+const sortByPosition = (a: Task, b: Task) => a.position - b.position
+
+const taskSlice = createSlice({
+  name: "tasks",
+  initialState,
+
+  reducers: {
+    tasksReplaced: (state, action: PayloadAction<Task[]>) => {
+      state.tasks = action.payload
+      syncTimer(state)
+    },
+
+    workspacesReplaced: (state, action: PayloadAction<Workspace[]>) => {
+      state.workspaces = action.payload
+    },
+
+    taskUpdatedLocally: (state, action: PayloadAction<Task>) => {
+      const idx = state.tasks.findIndex((t) => t.id === action.payload.id)
+
+      if (idx !== -1) {
+        state.tasks[idx] = action.payload
+      } else {
+        state.tasks.push(action.payload)
+      }
+
+      syncTimer(state)
+    },
+
+    taskDeletedLocally: (state, action: PayloadAction<string>) => {
+      state.tasks = state.tasks.filter((t) => t.id !== action.payload)
+
+      if (state.timer.taskId === action.payload) {
+        state.timer = IDLE_TIMER
+      }
+
+      syncTimer(state)
+    },
+
+    taskMovedLocally: (
+      state,
+      action: PayloadAction<{
+        id: string
+        status: TaskStatus
+        workspaceId: string
+        index: number
+      }>
+    ) => {
+      const { id, status, workspaceId, index } = action.payload
+
+      const task = state.tasks.find((t) => t.id === id)
+
+      if (!task) return
+
+      const oldStatus = task.status
+      const oldWorkspaceId = task.workspaceId
+
+      const target = state.tasks
+        .filter(
+          (t) =>
+            t.id !== id &&
+            t.status === status &&
+            t.workspaceId === workspaceId
+        )
+        .sort(sortByPosition)
+
+      const at = Math.max(0, Math.min(index, target.length))
+
+      target.splice(at, 0, task)
+
+      target.forEach((t, i) => {
+        t.position = i
+      })
+
+      task.status = status
+      task.workspaceId = workspaceId
+
+      if (oldStatus !== status || oldWorkspaceId !== workspaceId) {
+        state.tasks
+          .filter(
+            (t) =>
+              t.status === oldStatus && t.workspaceId === oldWorkspaceId
+          )
+          .sort(sortByPosition)
+          .forEach((t, i) => {
+            t.position = i
+          })
+      }
+
+      // Moving the timed task out of IN_PROGRESS must stop the timer.
+      syncTimer(state)
+    },
+
+    workspaceUpsertedLocally: (state, action: PayloadAction<Workspace>) => {
+      if (!Array.isArray(state.workspaces)) {
+        state.workspaces = []
+      }
+
+      const idx = state.workspaces.findIndex(
+        (w) => w.id === action.payload.id
+      )
+
+      if (idx !== -1) {
+        state.workspaces[idx] = action.payload
+      } else {
+        state.workspaces.push(action.payload)
+      }
+
+      state.workspaces.sort((a, b) => a.name.localeCompare(b.name))
+    },
+
+    workspaceDeletedLocally: (state, action: PayloadAction<string>) => {
+      const id = action.payload
+
+      const removedTaskIds = state.tasks
+        .filter((t) => t.workspaceId === id)
+        .map((t) => t.id)
+
+      state.workspaces = state.workspaces.filter((w) => w.id !== id)
+
+      state.tasks = state.tasks.filter((t) => t.workspaceId !== id)
+
+      if (state.timer.taskId && removedTaskIds.includes(state.timer.taskId)) {
+        state.timer = IDLE_TIMER
+      }
+
+      syncTimer(state)
+    },
+
+    timerSet: (state, action: PayloadAction<TimerState>) => {
+      state.timer = action.payload
+    },
+
+    timerUpdated: (state, action: PayloadAction<Partial<TimerState>>) => {
+      state.timer = {
+        ...state.timer,
+        ...action.payload,
+      }
+    },
+
+    timerCleared: (state) => {
+      state.timer = IDLE_TIMER
+    },
+
+    timerTick: (state) => {
+      // Never tick without an in-progress task.
+      syncTimer(state)
+
+      if (state.timer.phase !== "running") return
+
+      const now = Date.now()
+
+      if (
+        state.timer.lastCheckTime &&
+        now - state.timer.lastCheckTime >
+          CHECK_INTERVAL_MS + RESPONSE_WINDOW_MS
+      ) {
+        state.timer.isStale = true
+      }
+
+      state.timer.lastCheckTime = now
+    },
+
+    pendingAdd: (state, action: PayloadAction<string>) => {
+      if (!Array.isArray(state.pendingIds)) {
+        state.pendingIds = []
+      }
+
+      if (!state.pendingIds.includes(action.payload)) {
+        state.pendingIds.push(action.payload)
+      }
+    },
+
+    pendingRemove: (state, action: PayloadAction<string>) => {
+      if (!Array.isArray(state.pendingIds)) {
+        state.pendingIds = []
+        return
+      }
+
+      state.pendingIds = state.pendingIds.filter((id) => id !== action.payload)
+    },
+
+    errorSet: (state, action: PayloadAction<string | null>) => {
+      state.error = action.payload
+    },
+  },
+
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchTasks.pending, (state) => {
+        if (state.status === "idle") {
+          state.status = "loading"
+        }
+      })
+
+      .addCase(fetchTasks.fulfilled, (state, action) => {
+        const { tasks, workspaces, activeSession, activeAccumulatedSeconds } =
+          action.payload
+
+        const prevById = new Map(state.tasks.map((t) => [t.id, t]))
+
+        state.status = "succeeded"
+
+        state.tasks = tasks.map((raw) => toTask(raw, prevById.get(raw.id)))
+
+        state.workspaces = Array.isArray(workspaces) ? workspaces : []
+
+        // Timer only runs if the server's active session belongs to a task
+        // that is actually IN_PROGRESS. Otherwise everything is reset.
+        const sessionTask = activeSession?.taskId
+          ? state.tasks.find((t) => t.id === activeSession.taskId)
+          : undefined
+
+        if (activeSession?.taskId && sessionTask?.status === "IN_PROGRESS") {
+          const prev = state.timer
+
+          const sameSession =
+            prev.taskId === activeSession.taskId && prev.phase === "running"
+
+          state.timer = {
+            taskId: activeSession.taskId,
+            phase: "running",
+            startedAt: activeSession.startedAt,
+            accumulatedSeconds: activeAccumulatedSeconds,
+            lastCheckTime: sameSession ? prev.lastCheckTime : Date.now(),
+            isStale: sameSession ? prev.isStale : false,
+          }
+        } else {
+          state.timer = IDLE_TIMER
+        }
+      })
+
+      .addCase(fetchTasks.rejected, (state, action) => {
+        state.status = "failed"
+
+        state.error = action.error.message || "Failed to load tasks"
+      })
+  },
+})
+
+export const {
+  tasksReplaced,
+  workspacesReplaced,
+  taskUpdatedLocally,
+  taskDeletedLocally,
+  taskMovedLocally,
+  workspaceUpsertedLocally,
+  workspaceDeletedLocally,
+  timerSet,
+  timerUpdated,
+  timerCleared,
+  timerTick,
+  pendingAdd,
+  pendingRemove,
+  errorSet,
+} = taskSlice.actions
+
+export default taskSlice.reducer
+
+/* -------------------------------------------------------------------------- */
+/* Selectors                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export const selectTasks = (state: TasksRootState): Task[] =>
+  state.tasks?.tasks ?? []
+
+export const selectWorkspaces = (state: TasksRootState): Workspace[] =>
+  state.tasks?.workspaces ?? []
+
+export const selectTimer = (state: TasksRootState): TimerState =>
+  state.tasks?.timer ?? IDLE_TIMER
+
+export const selectTasksStatus = (state: TasksRootState): LoadStatus =>
+  state.tasks?.status ?? "idle"
+
+export const selectTasksError = (state: TasksRootState): string | null =>
+  state.tasks?.error ?? null
+
+export const selectPendingIds = (state: TasksRootState): string[] =>
+  state.tasks?.pendingIds ?? []
+
+/** True only while at least one task is IN_PROGRESS. */
+export const selectHasInProgressTask = (state: TasksRootState): boolean =>
+  (state.tasks?.tasks ?? []).some((t) => t.status === "IN_PROGRESS")
+
+type AppDispatch = ThunkDispatch<TasksRootState, unknown, AnyAction>
+
+async function run(
+  dispatch: AppDispatch,
+  id: string,
+  fn: () => Promise<void>
+) {
+  dispatch(pendingAdd(id))
+  dispatch(errorSet(null))
+
+  try {
+    await fn()
+  } catch (err) {
+    dispatch(
+      errorSet(err instanceof Error ? err.message : "An error occurred")
+    )
+  } finally {
+    dispatch(pendingRemove(id))
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Task thunks                                                                */
+/* -------------------------------------------------------------------------- */
+
+export const addTask =
+  (input: TaskInput) =>
+  async (dispatch: AppDispatch): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, "add", async () => {
+      const raw = await request<ApiTask>(TASKS_API, "", {
+        method: "POST",
+        ...body(input),
+      })
+
+      dispatch(taskUpdatedLocally(toTask(raw)))
+
+      if (raw.status === "IN_PROGRESS") {
+        await dispatch(fetchTasks())
+      }
+
+      success = true
+    })
+
+    return success
+  }
+
+export const updateTask =
+  (id: string, patch: TaskPatch) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      const prev = getState().tasks.tasks.find((t) => t.id === id)
+
+      const raw = await request<ApiTask>(TASKS_API, `/${id}`, {
+        method: "PATCH",
+        ...body(patch),
+      })
+
+      dispatch(taskUpdatedLocally(toTask(raw, prev)))
+
+      if (
+        patch.workspaceId &&
+        prev &&
+        patch.workspaceId !== prev.workspaceId
+      ) {
+        await dispatch(fetchTasks())
+      }
+
+      success = true
+    })
+
+    return success
+  }
+
+export const deleteTask =
+  (id: string) =>
+  async (dispatch: AppDispatch): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      await request<void>(TASKS_API, `/${id}`, {
+        method: "DELETE",
+      })
+
+      dispatch(taskDeletedLocally(id))
+
+      await dispatch(fetchTasks())
+
+      success = true
+    })
+
+    return success
+  }
+
+export const moveTask =
+  (id: string, to: TaskStatus, index: number, workspaceId?: string) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      const state = getState().tasks
+
+      const task = state.tasks.find((t) => t.id === id)
+
+      if (!task) {
+        throw new Error("Task not found")
+      }
+
+      if (isLocked(task.status)) {
+        throw new Error("Cannot move a completed task")
+      }
+
+      if (to === "IN_PROGRESS" && task.status !== "IN_PROGRESS") {
+        if (!isTaskStartAllowed(state.tasks, state.timer, id)) {
+          throw new Error("Cannot start task while another is running")
+        }
+      }
+
+      if (to === "COMPLETED" && !canCompleteTask(state.tasks, state.timer, id)) {
+        throw new Error("Cannot complete this task")
+      }
+
+      dispatch(
+        taskMovedLocally({
+          id,
+          status: to,
+          workspaceId: workspaceId ?? task.workspaceId,
+          index,
+        })
+      )
+
+      try {
+        await request<ApiTask>(TASKS_API, `/${id}/move`, {
+          method: "PATCH",
+          ...body({
+            status: to,
+            index,
+            ...(workspaceId ? { workspaceId } : {}),
+          }),
+        })
+      } catch (err) {
+        await dispatch(fetchTasks())
+
+        throw err
+      }
+
+      await dispatch(fetchTasks())
+
+      success = true
+    })
+
+    return success
+  }
+
+export const startTask =
+  (id: string) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      const state = getState().tasks
+
+      const task = state.tasks.find((t) => t.id === id)
+
+      if (!task) {
+        throw new Error("Task not found")
+      }
+
+      if (task.status === "IN_PROGRESS") {
+        return
+      }
+
+      if (!isTaskStartAllowed(state.tasks, state.timer, id)) {
+        throw new Error("Cannot start task while another is running")
+      }
+
+      const raw = await request<ApiTask>(TASKS_API, `/${id}/start`, {
+        method: "POST",
+      })
+
+      dispatch(taskUpdatedLocally(toTask(raw, task)))
+
+      await dispatch(fetchTasks())
+
+      success = true
+    })
+
+    return success
+  }
+
+export const holdTask =
+  (id: string) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      const prev = getState().tasks.tasks.find((t) => t.id === id)
+
+      const raw = await request<ApiTask>(TASKS_API, `/${id}/hold`, {
+        method: "POST",
+      })
+
+      dispatch(taskUpdatedLocally(toTask(raw, prev)))
+
+      await dispatch(fetchTasks())
+
+      success = true
+    })
+
+    return success
+  }
+
+export const completeTask =
+  (id: string) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      const state = getState().tasks
+
+      if (!canCompleteTask(state.tasks, state.timer, id)) {
+        throw new Error("Cannot complete this task")
+      }
+
+      const prev = state.tasks.find((t) => t.id === id)
+
+      const raw = await request<ApiTask>(TASKS_API, `/${id}/complete`, {
+        method: "POST",
+      })
+
+      dispatch(taskUpdatedLocally(toTask(raw, prev)))
+
+      await dispatch(fetchTasks())
+
+      success = true
+    })
+
+    return success
+  }
+
+/**
+ * Still working check-in.
+ */
+export const confirmActive =
+  (id: string) =>
+  async (
+    dispatch: AppDispatch,
+    getState: () => TasksRootState
+  ): Promise<boolean> => {
+    let success = false
+
+    await run(dispatch, id, async () => {
+      await request<{ committedSeconds: number }>(TASKS_API, `/${id}/sync`, {
+        method: "POST",
+      })
+
+      const state = getState().tasks
+
+      if (state.timer.taskId === id && state.timer.phase === "running") {
+        dispatch(
+          timerUpdated({
+            lastCheckTime: Date.now(),
+            isStale: false,
+          })
+        )
+      }
+
+      success = true
+    })
+
+    return success
+  }
+
+/* -------------------------------------------------------------------------- */
+/* Workspace thunks                                                           */
+/* -------------------------------------------------------------------------- */
+
+export const fetchWorkspaces =
+  () =>
+  async (dispatch: AppDispatch): Promise<boolean> => {
+    dispatch(errorSet(null))
+
+    try {
+      const data = await request<{ workspaces: Workspace[] }>(
+        WORKSPACES_API,
+        ""
+      )
+
+      dispatch(workspacesReplaced(data.workspaces ?? []))
+
+      return true
+    } catch (error) {
+      dispatch(
+        errorSet(
+          error instanceof Error ? error.message : "Failed to fetch workspaces"
+        )
+      )
+
+      return false
+    }
+  }
+
+export const addWorkspace =
+  (input: WorkspaceInput) =>
+  async (dispatch: AppDispatch): Promise<Workspace | null> => {
+    dispatch(errorSet(null))
+
+    try {
+      const data = await request<{ workspace: Workspace }>(WORKSPACES_API, "", {
+        method: "POST",
+        ...body(input),
+      })
+
+      dispatch(workspaceUpsertedLocally(data.workspace))
+
+      return data.workspace
+    } catch (error) {
+      dispatch(
+        errorSet(
+          error instanceof Error ? error.message : "Failed to create workspace"
+        )
+      )
+
+      return null
+    }
+  }
+
+export const updateWorkspace =
+  (id: string, patch: WorkspacePatch) =>
+  async (dispatch: AppDispatch): Promise<boolean> => {
+    dispatch(errorSet(null))
+
+    try {
+      const data = await request<{ workspace: Workspace }>(
+        WORKSPACES_API,
+        `/${id}`,
+        {
+          method: "PATCH",
+          ...body(patch),
+        }
+      )
+
+      dispatch(workspaceUpsertedLocally(data.workspace))
+
+      return true
+    } catch (error) {
+      dispatch(
+        errorSet(
+          error instanceof Error ? error.message : "Failed to update workspace"
+        )
+      )
+
+      return false
+    }
+  }
+
+export const deleteWorkspace =
+  (id: string) =>
+  async (dispatch: AppDispatch): Promise<boolean> => {
+    dispatch(errorSet(null))
+
+    try {
+      await request<void>(WORKSPACES_API, `/${id}`, {
+        method: "DELETE",
+      })
+
+      dispatch(workspaceDeletedLocally(id))
+
+      await dispatch(fetchTasks())
+
+      return true
+    } catch (error) {
+      dispatch(
+        errorSet(
+          error instanceof Error ? error.message : "Failed to delete workspace"
+        )
+      )
+
+      return false
+    }
+  }
+
+export const runTimerTick = () => (dispatch: AppDispatch) => {
+  dispatch(timerTick())
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hooks                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export function useTaskStore() {
+  const dispatch = useDispatch<AppDispatch>()
+
+  const tasks = useSelector(selectTasks)
+  const workspaces = useSelector(selectWorkspaces)
+  const timer = useSelector(selectTimer)
+  const status = useSelector(selectTasksStatus)
+  const error = useSelector(selectTasksError)
+  const pendingIds = useSelector(selectPendingIds)
+
+  // Retry on "failed" so data loads after a transient network error.
+  useEffect(() => {
+    if (status === "idle" || status === "failed") {
+      dispatch(fetchTasks())
+    }
+  }, [status, dispatch])
+
+  const clearError = useCallback(() => {
+    dispatch(errorSet(null))
+  }, [dispatch])
+
+  return {
+    tasks,
+    workspaces,
+    timer,
+    status,
+    error,
+    pendingIds,
+    clearError,
+
+    addTask: (input: TaskInput) => dispatch(addTask(input)),
+
+    updateTask: (id: string, patch: TaskPatch) =>
+      dispatch(updateTask(id, patch)),
+
+    deleteTask: (id: string) => dispatch(deleteTask(id)),
+
+    moveTask: (
+      id: string,
+      to: TaskStatus,
+      index: number,
+      workspaceId?: string
+    ) => dispatch(moveTask(id, to, index, workspaceId)),
+
+    startTask: (id: string) => dispatch(startTask(id)),
+
+    holdTask: (id: string) => dispatch(holdTask(id)),
+
+    completeTask: (id: string) => dispatch(completeTask(id)),
+
+    confirmActive: (id: string) => dispatch(confirmActive(id)),
+
+    fetchTasks: () => dispatch(fetchTasks()),
+
+    fetchWorkspaces: () => dispatch(fetchWorkspaces()),
+
+    addWorkspace: (input: WorkspaceInput) => dispatch(addWorkspace(input)),
+
+    updateWorkspace: (id: string, patch: WorkspacePatch) =>
+      dispatch(updateWorkspace(id, patch)),
+
+    deleteWorkspace: (id: string) => dispatch(deleteWorkspace(id)),
+  }
+}
+
+/**
+ * Lightweight hook for components that only need workspaces.
+ */
+export function useWorkspaceStore() {
+  const dispatch = useDispatch<AppDispatch>()
+
+  const workspaces = useSelector(selectWorkspaces)
+  const status = useSelector(selectTasksStatus)
+  const error = useSelector(selectTasksError)
+
+  useEffect(() => {
+    if (status === "idle" || status === "failed") {
+      dispatch(fetchTasks())
+    }
+  }, [status, dispatch])
+
+  const clearError = useCallback(() => {
+    dispatch(errorSet(null))
+  }, [dispatch])
+
+  const add = useCallback(
+    (input: WorkspaceInput) => dispatch(addWorkspace(input)),
+    [dispatch]
+  )
+
+  const update = useCallback(
+    (id: string, patch: WorkspacePatch) =>
+      dispatch(updateWorkspace(id, patch)),
+    [dispatch]
+  )
+
+  const remove = useCallback(
+    (id: string) => dispatch(deleteWorkspace(id)),
+    [dispatch]
+  )
+
+  return {
+    workspaces,
+    status,
+    error,
+    clearError,
+    addWorkspace: add,
+    updateWorkspace: update,
+    deleteWorkspace: remove,
+  }
+}
+
+/**
+ * Convenience hook: true only while a task is IN_PROGRESS.
+ * Use it to gate other timers, e.g. useActivityTimer({ userId, enabled }).
+ */
+export function useHasInProgressTask(): boolean {
+  return useSelector(selectHasInProgressTask)
+}
+
+/* ------------------------- single shared 1s ticker ------------------------ */
+
+let engineConsumers = 0
+let engineInterval: ReturnType<typeof setInterval> | null = null
+
+/**
+ * Drives the Redux timer. Guarantees:
+ *  - nothing runs unless the timer is "running" AND a task is IN_PROGRESS
+ *  - only ONE interval exists app-wide, no matter how many components call it
+ */
+export function useTaskTimerEngine() {
+  const dispatch = useDispatch<AppDispatch>()
+
+  const shouldRun = useSelector(
+    (state: TasksRootState) =>
+      state.tasks.timer.phase === "running" && selectHasInProgressTask(state)
+  )
+
+  useEffect(() => {
+    if (!shouldRun) return
+
+    engineConsumers += 1
+
+    if (engineConsumers === 1) {
+      engineInterval = setInterval(() => {
+        dispatch(timerTick())
+      }, 1000)
+    }
+
+    return () => {
+      engineConsumers -= 1
+
+      if (engineConsumers <= 0) {
+        engineConsumers = 0
+
+        if (engineInterval != null) {
+          clearInterval(engineInterval)
+          engineInterval = null
+        }
+      }
+    }
+  }, [shouldRun, dispatch])
+}
+
+export function useActiveTask() {
+  const tasks = useSelector(selectTasks)
+  const timer = useSelector(selectTimer)
+  const pendingIds = useSelector(selectPendingIds)
+
+  // Only an IN_PROGRESS task can be the "active" timed task.
+  const activeTask = useMemo(() => {
+    if (!timer.taskId) {
+      return null
+    }
+
+    const found = tasks.find((t) => t.id === timer.taskId)
+
+    return found && found.status === "IN_PROGRESS" ? found : null
+  }, [tasks, timer.taskId])
+
+  const currentSpent = useMemo(() => {
+    if (!activeTask) return 0
+
+    return taskSpentSeconds(activeTask, timer)
+  }, [activeTask, timer])
+
+  const currentRemaining = useMemo(() => {
+    if (!activeTask) return 0
+
+    return remainingSeconds(activeTask, timer)
+  }, [activeTask, timer])
+
+  const isPending = activeTask ? pendingIds.includes(activeTask.id) : false
+
+  const planned = activeTask?.plannedDurationSeconds ?? 0
+
+  return {
+    activeTask,
+    timer,
+
+    spentSeconds: currentSpent,
+
+    remainingSeconds: currentRemaining,
+
+    formattedSpent: formatClock(currentSpent),
+
+    formattedRemaining: formatClock(currentRemaining),
+
+    isOverdue: planned > 0 && currentSpent > planned,
+
+    isPending,
+  }
+}
+
+export function useTodayTasks() {
+  const tasks = useSelector(selectTasks)
+
+  return useMemo(() => {
+    return tasks
+  }, [tasks])
+}
