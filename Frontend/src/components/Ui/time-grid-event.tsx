@@ -5,6 +5,7 @@ import { Tag } from "lucide-react"
 import { cn } from "../../lib/utills"
 import {
   getTaskTimeRange,
+  useWorkspaceMap,
   type PositionedTask,
 } from "../../lib/tasks"
 
@@ -43,9 +44,11 @@ export function TimeGridEvent({
   const priorityClass = getPriorityClass(task.priority)
 
   // on_hold is treated as muted
-  const isOnHold = task.status === "on_hold"
+  const workspaceName = useWorkspaceMap().get(task.workspaceId)?.name ?? ""
+
+  const isOnHold = task.status === "ON_HOLD"
   const isMuted =
-    isOnHold || task.status === "completed"
+    isOnHold || task.status === "COMPLETED"
 
   const durationMinutes =
     task.plannedDurationSeconds / 60
@@ -85,7 +88,7 @@ export function TimeGridEvent({
           <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] font-medium opacity-90 text-primary">
             <Tag className="size-3" />
             <span className="capitalize">
-              {task.category}
+              {workspaceName}
             </span>
           </span>
         )}

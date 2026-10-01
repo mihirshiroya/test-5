@@ -258,10 +258,34 @@ const WORKSPACES_API = `${API_BASE_URL}/api/workspaces`
  * workspaces controller: { success, data, message }
  * DELETE /tasks/:id:     204 with no body
  */
+let refreshInFlight: Promise<boolean> | null = null
+
+/**
+ * The access-token cookie lives 15 minutes. Refresh it once (shared across
+ * concurrent callers, because the backend rotates the refresh token).
+ */
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${API_BASE_URL}/api/auth/refresh-token`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((r) => r.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null
+      })
+  }
+
+  return refreshInFlight
+}
+
 async function request<T>(
   base: string,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  retried = false
 ): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     credentials: "include",
@@ -271,6 +295,12 @@ async function request<T>(
       ...(init?.headers ?? {}),
     },
   })
+
+  if (response.status === 401 && !retried) {
+    if (await refreshSession()) {
+      return request<T>(base, path, init, true)
+    }
+  }
 
   if (response.status === 204) {
     return undefined as T
@@ -333,6 +363,23 @@ interface ApiTask {
   completedAt?: number | null
 }
 
+/**
+ * A field the server sent explicitly (even as null) wins over the previous
+ * value; otherwise clearing a date in the editor would never stick.
+ */
+function pick<K extends keyof ApiTask & keyof Task>(
+  raw: ApiTask,
+  key: K,
+  prev: Task | undefined,
+  fallback: Task[K]
+): Task[K] {
+  if (key in raw && raw[key] !== undefined) {
+    return (raw[key] ?? fallback) as Task[K]
+  }
+
+  return prev ? prev[key] : fallback
+}
+
 function toTask(raw: ApiTask, prev?: Task): Task {
   return {
     id: raw.id,
@@ -343,24 +390,23 @@ function toTask(raw: ApiTask, prev?: Task): Task {
     priority: raw.priority,
     position: raw.position,
 
-    startDate: raw.startDate ?? prev?.startDate ?? null,
+    startDate: pick(raw, "startDate", prev, null),
 
-    deadlineDate: raw.deadlineDate ?? prev?.deadlineDate ?? null,
+    deadlineDate: pick(raw, "deadlineDate", prev, null),
 
-    plannedDurationSeconds:
-      raw.plannedDurationSeconds ?? prev?.plannedDurationSeconds ?? 0,
+    plannedDurationSeconds: pick(raw, "plannedDurationSeconds", prev, 0),
 
     actualDurationSeconds:
-      raw.actualDurationSeconds ??
       raw.spentSeconds ??
+      raw.actualDurationSeconds ??
       prev?.actualDurationSeconds ??
       0,
 
-    startedAt: raw.startedAt ?? prev?.startedAt ?? null,
+    startedAt: pick(raw, "startedAt", prev, null),
 
     completedAt:
       raw.completedAt ??
-      (raw.status === "COMPLETED" ? raw.updatedAt : null),
+      (raw.status === "COMPLETED" ? raw.updatedAt ?? Date.now() : null),
 
     createdAt: raw.createdAt ?? prev?.createdAt ?? Date.now(),
   }
@@ -477,18 +523,17 @@ export const fetchTasks = createAsyncThunk<
     let activeAccumulatedSeconds = 0
 
     if (activeSession?.taskId) {
-      try {
-        const detail = await request<ApiTask>(
-          TASKS_API,
-          `/${activeSession.taskId}`
-        )
-        activeAccumulatedSeconds = Math.max(
-          0,
-          (detail.spentSeconds ?? 0) - (activeSession.committedSeconds ?? 0)
-        )
-      } catch {
-        activeAccumulatedSeconds = 0
-      }
+      // spentSeconds includes the open session's last synced checkpoint, so
+      // subtract it: the live part is re-derived from activeSession.startedAt.
+      const activeRaw = (data.tasks ?? []).find(
+        (t) => t.id === activeSession.taskId
+      )
+
+      activeAccumulatedSeconds = Math.max(
+        0,
+        (activeRaw?.spentSeconds ?? activeRaw?.actualDurationSeconds ?? 0) -
+          (activeSession.committedSeconds ?? 0)
+      )
     }
 
     // Priority: dedicated endpoint -> tasks endpoint -> existing state.
@@ -1212,6 +1257,7 @@ export function useTaskStore() {
   const status = useSelector(selectTasksStatus)
   const error = useSelector(selectTasksError)
   const pendingIds = useSelector(selectPendingIds)
+  const hasActiveTask = useSelector(selectHasInProgressTask)
 
   // Retry on "failed" so data loads after a transient network error.
   useEffect(() => {
@@ -1231,6 +1277,7 @@ export function useTaskStore() {
     status,
     error,
     pendingIds,
+    hasActiveTask,
     clearError,
 
     addTask: (input: TaskInput) => dispatch(addTask(input)),

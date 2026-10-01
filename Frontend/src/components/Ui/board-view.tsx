@@ -2,13 +2,12 @@ import { KanbanBoard } from "./kanban-board"
 
 interface BoardViewProps {
   title: string
-  description: string
+  description?: string
   workspaceId: string | null
 }
 
 export function BoardView({
   title,
-  description,
   workspaceId,
 }: BoardViewProps) {
   return (

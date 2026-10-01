@@ -18,7 +18,7 @@ const serverError = (res, error) => {
 const ms = (date) => (date ? new Date(date).getTime() : null);
 const toInt = (val) => parseInt(val, 10);
 const elapsedBetween = (start, end) =>
-  Math.floor((end - start) / 1000);
+  Math.max(0, Math.floor((new Date(end) - new Date(start)) / 1000));
 
 const isLocked = (status) => status === 'COMPLETED';
 
@@ -33,40 +33,44 @@ const findOwnedWorkspace = (id, userId) =>
 
 /**
  * @param {object} task  – Prisma task row
- * @param {number} [spent=0] – pre-computed spentSeconds (sum of committed sessions)
+ * @param {number} [spent] – seconds tracked across all sessions of the task
  */
-const serializeTask = (task, spent = 0) => ({
-  id: task.id,
-  title: task.title,
-  description: task.description ?? null,
-  status: task.status,
-  priority: task.priority,
-  workspaceId: task.workspaceId,
-  position: task.position,
-  createdAt: ms(task.createdAt),
-  updatedAt: ms(task.updatedAt),
-  // ── Duration / scheduling fields the frontend expects ──────────────────
-  plannedDurationSeconds: task.plannedDurationSeconds ?? 0,
-  actualDurationSeconds: task.actualDurationSeconds ?? spent,
-  spentSeconds: spent,
-  startDate: ms(task.startDate),
-  deadlineDate: ms(task.deadlineDate),
-  startedAt: ms(task.startedAt),
-  completedAt: ms(task.completedAt),
-});
+const serializeTask = (task, spent) => {
+  const tracked = spent ?? task.actualDurationSeconds ?? 0;
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description ?? '',
+    status: task.status,
+    priority: task.priority,
+    workspaceId: task.workspaceId,
+    position: task.position,
+    createdAt: ms(task.createdAt),
+    updatedAt: ms(task.updatedAt),
+    plannedDurationSeconds: task.plannedDurationSeconds ?? 0,
+    actualDurationSeconds: tracked,
+    spentSeconds: tracked,
+    startDate: ms(task.startDate),
+    deadlineDate: ms(task.deadlineDate),
+    startedAt: ms(task.startedAt),
+    completedAt: ms(task.completedAt),
+  };
+};
 
 const serializeSession = (session) => ({
   id: session.id,
   taskId: session.taskId,
   startedAt: ms(session.startedAt),
   endedAt: ms(session.endedAt),
-  committedSeconds: session.committedSeconds,
+  committedSeconds: session.durationSeconds ?? 0,
 });
 
 const serializeWorkspace = (ws) => ({
   id: ws.id,
   name: ws.name,
   description: ws.description ?? null,
+  tint: ws.tint,
+  icon: ws.icon,
   createdAt: ms(ws.createdAt),
   updatedAt: ms(ws.updatedAt),
 });
@@ -93,62 +97,157 @@ const nextPosition = async (tx, where) => {
   return last ? last.position + 1 : 0;
 };
 
-const reindexColumn = async (
-  tx,
-  { userId, workspaceId, status },
-  startPosition = 0,
-) => {
+/** Rewrites positions of one column (workspace + status) to 0..n-1. */
+const reindexColumn = async (tx, { userId, workspaceId, status }) => {
   const tasks = await tx.task.findMany({
-    where: { userId, workspaceId, status, position: { gte: startPosition } },
-    orderBy: { position: 'asc' },
+    where: { userId, workspaceId, status },
+    orderBy: [{ position: 'asc' }, { updatedAt: 'desc' }],
+    select: { id: true, position: true },
   });
   for (let i = 0; i < tasks.length; i++) {
-    await tx.task.update({
-      where: { id: tasks[i].id },
-      data: { position: startPosition + i },
-    });
+    if (tasks[i].position !== i) {
+      await tx.task.update({
+        where: { id: tasks[i].id },
+        data: { position: i },
+      });
+    }
   }
 };
 
 // ---------------------------------------------------------------------------
-// Session helpers
+// Session helpers  (model: TaskSession, field: durationSeconds)
 // ---------------------------------------------------------------------------
 
 const openSessionWhere = (taskId) => ({ taskId, endedAt: null });
 
-const openSession = (tx, taskId) =>
-  tx.session.create({ data: { taskId } });
+const openSession = (tx, userId, taskId) =>
+  tx.taskSession.create({
+    data: { userId, taskId, startedAt: new Date() },
+  });
 
+/**
+ * Closes a session and adds its full duration to the task's
+ * actualDurationSeconds. Returns { session, seconds }.
+ */
 const closeSession = async (tx, session, forceTime = null) => {
   const ended = forceTime || new Date();
-  const elapsed = elapsedBetween(session.startedAt, ended);
-  return tx.session.update({
+  const seconds = elapsedBetween(session.startedAt, ended);
+  const closed = await tx.taskSession.update({
     where: { id: session.id },
-    data: {
-      endedAt: ended,
-      committedSeconds: Math.max(0, elapsed),
-    },
+    data: { endedAt: ended, durationSeconds: seconds },
   });
+  await tx.task.update({
+    where: { id: session.taskId },
+    data: { actualDurationSeconds: { increment: seconds } },
+  });
+  return { session: closed, seconds };
 };
 
-const spentSeconds = async (taskId) => {
-  const agg = await prisma.session.aggregate({
+const closeOpenSession = async (tx, userId, taskId) => {
+  const session = await tx.taskSession.findFirst({
+    where: openSessionWhere(taskId),
+  });
+  if (!session) return 0;
+  const { seconds } = await closeSession(tx, session);
+  if (seconds > 0) {
+    await recordActivity(tx, userId, 'SESSION_COMPLETED', {
+      taskId,
+      seconds,
+    });
+  }
+  return seconds;
+};
+
+/**
+ * Seconds tracked on sessions: closed durations plus the last synced
+ * checkpoint of the open session (durationSeconds is updated by /sync).
+ */
+const spentSeconds = async (taskId, client = prisma) => {
+  const agg = await client.taskSession.aggregate({
     where: { taskId },
-    _sum: { committedSeconds: true },
+    _sum: { durationSeconds: true },
   });
-  return agg._sum.committedSeconds || 0;
+  return agg._sum.durationSeconds || 0;
 };
 
-const canStart = async (userId) => {
-  const count = await prisma.session.count({
-    where: { task: { userId }, endedAt: null },
+/** Live spent time including the currently running (unsynced) session. */
+const liveSpentSeconds = async (taskId, client = prisma) => {
+  const [closedAgg, open] = await Promise.all([
+    client.taskSession.aggregate({
+      where: { taskId, endedAt: { not: null } },
+      _sum: { durationSeconds: true },
+    }),
+    client.taskSession.findFirst({ where: openSessionWhere(taskId) }),
+  ]);
+  const closed = closedAgg._sum.durationSeconds || 0;
+  return open ? closed + elapsedBetween(open.startedAt, new Date()) : closed;
+};
+
+const canStart = async (userId, exceptTaskId = null) => {
+  const count = await prisma.taskSession.count({
+    where: {
+      userId,
+      endedAt: null,
+      ...(exceptTaskId ? { taskId: { not: exceptTaskId } } : {}),
+    },
   });
   return count === 0;
 };
 
+const canComplete = async (task) => {
+  if (!task.plannedDurationSeconds || task.plannedDurationSeconds <= 0) return true;
+  const spent = await liveSpentSeconds(task.id);
+  // Small grace (2s) for clock drift between client and server.
+  return spent + 2 >= task.plannedDurationSeconds * COMPLETION_THRESHOLD;
+};
+
 // ---------------------------------------------------------------------------
-// Analytics
+// Analytics  (models: DailyAnalytics + DailyActivity)
 // ---------------------------------------------------------------------------
+
+/** Today as a UTC-midnight Date, which maps cleanly onto a @db.Date column. */
+const analyticsDay = () => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+};
+
+const counterIncrements = (type, metadata) => {
+  switch (type) {
+    case 'TASK_CREATED':
+      return { createdTaskCount: { increment: 1 } };
+    case 'TASK_COMPLETED':
+      return { completedTaskCount: { increment: 1 } };
+    case 'SESSION_COMPLETED':
+      return {
+        totalSessions: { increment: 1 },
+        totalFocusSeconds: { increment: Math.max(0, toInt(metadata.seconds) || 0) },
+      };
+    default:
+      return {};
+  }
+};
+
+const recordActivity = async (tx, userId, type, metadata = {}, { taskExists = true } = {}) => {
+  const increments = counterIncrements(type, metadata);
+  const createCounters = Object.fromEntries(
+    Object.entries(increments).map(([k, v]) => [k, v.increment]),
+  );
+
+  const analytics = await tx.dailyAnalytics.upsert({
+    where: { userId_analyticsDate: { userId, analyticsDate: analyticsDay() } },
+    update: increments,
+    create: { userId, analyticsDate: analyticsDay(), ...createCounters },
+  });
+
+  return tx.dailyActivity.create({
+    data: {
+      dailyAnalyticsId: analytics.id,
+      taskId: taskExists ? metadata.taskId ?? null : null,
+      type,
+      metadata,
+    },
+  });
+};
 
 const startOfDay = () => {
   const d = new Date();
@@ -156,12 +255,16 @@ const startOfDay = () => {
   return d;
 };
 
-const recordActivity = (tx, userId, type, metadata = {}) =>
-  tx.activity.create({ data: { userId, type, metadata } });
-
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
+
+const parseDateField = (raw) => {
+  if (raw === null || raw === '') return { value: null };
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return { error: true };
+  return { value: d };
+};
 
 /**
  * Validates + coerces task fields from req.body.
@@ -171,7 +274,6 @@ const buildTaskData = (body, partial = false) => {
   const data = {};
   const errors = [];
 
-  // title
   if (body.title !== undefined || !partial) {
     const title = clean(body.title);
     if (!title) {
@@ -183,12 +285,10 @@ const buildTaskData = (body, partial = false) => {
     }
   }
 
-  // description
   if (body.description !== undefined) {
     data.description = clean(body.description) || '';
   }
 
-  // workspaceId
   if (body.workspaceId !== undefined || !partial) {
     const workspaceId = clean(body.workspaceId);
     if (!workspaceId) {
@@ -198,7 +298,6 @@ const buildTaskData = (body, partial = false) => {
     }
   }
 
-  // status
   if (body.status !== undefined || !partial) {
     const status = clean(body.status);
     if (status && !STATUSES.includes(status)) {
@@ -210,7 +309,6 @@ const buildTaskData = (body, partial = false) => {
     }
   }
 
-  // priority
   if (body.priority !== undefined || !partial) {
     const priority = clean(body.priority);
     if (priority && !PRIORITIES.includes(priority)) {
@@ -222,34 +320,29 @@ const buildTaskData = (body, partial = false) => {
     }
   }
 
-  // ── NEW: scheduling / duration fields ────────────────────────────────────
-
-  // plannedDurationSeconds
   if (body.plannedDurationSeconds !== undefined) {
     const secs = toInt(body.plannedDurationSeconds);
-    if (!isNaN(secs) && secs >= 0) {
+    if (isNaN(secs) || secs < 0) {
+      errors.push('plannedDurationSeconds must be a non-negative integer');
+    } else {
       data.plannedDurationSeconds = secs;
     }
   }
 
-  // startDate  (accept epoch ms from frontend)
-  if (body.startDate !== undefined) {
-    if (body.startDate === null) {
-      data.startDate = null;
-    } else {
-      const d = new Date(body.startDate);
-      if (!isNaN(d.getTime())) data.startDate = d;
+  for (const field of ['startDate', 'deadlineDate']) {
+    if (body[field] !== undefined) {
+      const parsed = parseDateField(body[field]);
+      if (parsed.error) errors.push(`${field} is invalid`);
+      else data[field] = parsed.value;
     }
   }
 
-  // deadlineDate
-  if (body.deadlineDate !== undefined) {
-    if (body.deadlineDate === null) {
-      data.deadlineDate = null;
-    } else {
-      const d = new Date(body.deadlineDate);
-      if (!isNaN(d.getTime())) data.deadlineDate = d;
-    }
+  if (
+    data.startDate instanceof Date &&
+    data.deadlineDate instanceof Date &&
+    data.deadlineDate < data.startDate
+  ) {
+    errors.push('Deadline must be after the start date');
   }
 
   return { data, errors };
@@ -265,8 +358,10 @@ class TasksController {
     try {
       const userId = req.user.id;
       const where = { userId };
-      if (req.query.workspaceId) where.workspaceId = req.query.workspaceId;
-      if (req.query.status) where.status = req.query.status;
+      if (req.query.workspaceId) where.workspaceId = String(req.query.workspaceId);
+      if (req.query.status && STATUSES.includes(req.query.status)) {
+        where.status = req.query.status;
+      }
 
       const [tasks, workspaces, activeSession] = await Promise.all([
         listTasks(where),
@@ -274,29 +369,28 @@ class TasksController {
           where: { userId },
           orderBy: { name: 'asc' },
         }),
-        prisma.session.findFirst({
-          where: { task: { userId }, endedAt: null },
-          include: { task: true },
+        prisma.taskSession.findFirst({
+          where: { userId, endedAt: null },
+          orderBy: { startedAt: 'desc' },
         }),
       ]);
 
-      // Attach spentSeconds to each task efficiently
       const taskIds = tasks.map((t) => t.id);
-      const spentAgg = await prisma.session.groupBy({
-        by: ['taskId'],
-        where: { taskId: { in: taskIds } },
-        _sum: { committedSeconds: true },
-      });
+      const spentAgg = taskIds.length
+        ? await prisma.taskSession.groupBy({
+            by: ['taskId'],
+            where: { taskId: { in: taskIds } },
+            _sum: { durationSeconds: true },
+          })
+        : [];
       const spentMap = Object.fromEntries(
-        spentAgg.map((r) => [r.taskId, r._sum.committedSeconds ?? 0]),
+        spentAgg.map((r) => [r.taskId, r._sum.durationSeconds ?? 0]),
       );
 
       return res.json({
         tasks: tasks.map((t) => serializeTask(t, spentMap[t.id] ?? 0)),
         workspaces: workspaces.map(serializeWorkspace),
-        activeSession: activeSession
-          ? { ...serializeSession(activeSession), taskId: activeSession.taskId }
-          : null,
+        activeSession: activeSession ? serializeSession(activeSession) : null,
       });
     } catch (err) {
       return serverError(res, err);
@@ -335,7 +429,7 @@ class TasksController {
 
       const [spent, activeSession] = await Promise.all([
         spentSeconds(task.id),
-        prisma.session.findFirst({ where: openSessionWhere(task.id) }),
+        prisma.taskSession.findFirst({ where: openSessionWhere(task.id) }),
       ]);
 
       return res.json({
@@ -352,7 +446,6 @@ class TasksController {
     try {
       const userId = req.user.id;
 
-      // Apply defaults before validation
       const body = {
         status: 'TODO',
         priority: 'MEDIUM',
@@ -364,18 +457,12 @@ class TasksController {
       const { data, errors } = buildTaskData(body);
       if (errors.length > 0) return fail(res, 400, errors.join(', '));
 
-      if (data.status === 'IN_PROGRESS') {
-        const can = await canStart(userId);
-        if (!can)
-          return fail(
-            res,
-            400,
-            'Cannot create an IN_PROGRESS task while another task is active',
-          );
-      }
-
       const workspace = await findOwnedWorkspace(data.workspaceId, userId);
       if (!workspace) return fail(res, 404, 'Workspace not found');
+
+      if (data.status === 'IN_PROGRESS' && !(await canStart(userId))) {
+        return fail(res, 400, 'Cannot create an IN_PROGRESS task while another task is active');
+      }
 
       const task = await prisma.$transaction(async (tx) => {
         const position = await nextPosition(tx, {
@@ -384,6 +471,7 @@ class TasksController {
           status: data.status,
         });
 
+        const now = new Date();
         const t = await tx.task.create({
           data: {
             userId,
@@ -396,6 +484,8 @@ class TasksController {
             plannedDurationSeconds: data.plannedDurationSeconds ?? 0,
             startDate: data.startDate ?? null,
             deadlineDate: data.deadlineDate ?? null,
+            startedAt: data.status === 'IN_PROGRESS' ? now : null,
+            completedAt: data.status === 'COMPLETED' ? now : null,
           },
         });
 
@@ -406,13 +496,16 @@ class TasksController {
         });
 
         if (t.status === 'IN_PROGRESS') {
-          await openSession(tx, t.id);
+          await openSession(tx, userId, t.id);
+          await recordActivity(tx, userId, 'TASK_STARTED', { taskId: t.id });
+        } else if (t.status === 'COMPLETED') {
+          await recordActivity(tx, userId, 'TASK_COMPLETED', { taskId: t.id });
         }
 
         return t;
       });
 
-      return res.status(201).json(serializeTask(task));
+      return res.status(201).json(serializeTask(task, 0));
     } catch (err) {
       return serverError(res, err);
     }
@@ -427,23 +520,28 @@ class TasksController {
       if (isLocked(task.status)) return fail(res, 400, 'Cannot update a completed task');
 
       const { data, errors } = buildTaskData(req.body, true);
-      if (errors.length > 0) return fail(res, 400, errors.join(', '));
+      delete data.status; // status changes use the dedicated endpoints
 
-      delete data.status; // status changes use specialized endpoints
+      // Cross-check dates against the stored value when only one side changes.
+      const nextStart = data.startDate !== undefined ? data.startDate : task.startDate;
+      const nextDeadline = data.deadlineDate !== undefined ? data.deadlineDate : task.deadlineDate;
+      if (nextStart && nextDeadline && new Date(nextDeadline) < new Date(nextStart)) {
+        errors.push('Deadline must be after the start date');
+      }
+      if (errors.length > 0) return fail(res, 400, [...new Set(errors)].join(', '));
 
       if (Object.keys(data).length === 0) {
         const spent = await spentSeconds(task.id);
         return res.json(serializeTask(task, spent));
       }
 
-      if (data.workspaceId && data.workspaceId !== task.workspaceId) {
+      const movedWorkspace = data.workspaceId && data.workspaceId !== task.workspaceId;
+      if (movedWorkspace) {
         const ws = await findOwnedWorkspace(data.workspaceId, userId);
         if (!ws) return fail(res, 404, 'Workspace not found');
       }
 
       const updated = await prisma.$transaction(async (tx) => {
-        const movedWorkspace =
-          data.workspaceId && data.workspaceId !== task.workspaceId;
         const finalData = { ...data };
 
         if (movedWorkspace) {
@@ -464,7 +562,14 @@ class TasksController {
           });
         }
 
-        await recordActivity(tx, userId, 'TASK_UPDATED', {
+        const activityType =
+          data.priority && data.priority !== task.priority
+            ? 'PRIORITY_CHANGED'
+            : data.deadlineDate !== undefined && ms(data.deadlineDate) !== ms(task.deadlineDate)
+              ? 'DEADLINE_CHANGED'
+              : 'TASK_UPDATED';
+
+        await recordActivity(tx, userId, activityType, {
           taskId: u.id,
           changes: Object.keys(data),
         });
@@ -487,24 +592,23 @@ class TasksController {
       if (!task) return fail(res, 404, 'Task not found');
 
       await prisma.$transaction(async (tx) => {
-        const session = await tx.session.findFirst({
-          where: openSessionWhere(task.id),
-        });
-        if (session) await closeSession(tx, session);
+        await closeOpenSession(tx, userId, task.id);
 
         await tx.task.delete({ where: { id: task.id } });
 
-        await recordActivity(tx, userId, 'TASK_DELETED', {
-          taskId: task.id,
-          title: task.title,
-          workspaceId: task.workspaceId,
-        });
-
-        await reindexColumn(
+        await recordActivity(
           tx,
-          { userId, workspaceId: task.workspaceId, status: task.status },
-          task.position,
+          userId,
+          'TASK_DELETED',
+          { taskId: task.id, title: task.title, workspaceId: task.workspaceId },
+          { taskExists: false },
         );
+
+        await reindexColumn(tx, {
+          userId,
+          workspaceId: task.workspaceId,
+          status: task.status,
+        });
       });
 
       return res.status(204).send();
@@ -514,6 +618,7 @@ class TasksController {
   }
 
   // ── PATCH /api/tasks/:taskId/move ─────────────────────────────────────────
+  // body: { status?, index?, workspaceId? }
   static async moveTask(req, res) {
     try {
       const userId = req.user.id;
@@ -521,6 +626,7 @@ class TasksController {
 
       const task = await findOwnedTask(req.params.taskId, userId);
       if (!task) return fail(res, 404, 'Task not found');
+      if (isLocked(task.status)) return fail(res, 400, 'Cannot move a completed task');
 
       const newStatus = status ? clean(status) : task.status;
       if (!STATUSES.includes(newStatus)) return fail(res, 400, 'Invalid status');
@@ -531,134 +637,97 @@ class TasksController {
         if (!ws) return fail(res, 404, 'Workspace not found');
       }
 
-      const movedCol =
-        newStatus !== task.status || newWorkspaceId !== task.workspaceId;
-      const targetIndex = index !== undefined ? toInt(index) : null;
+      const statusChanged = newStatus !== task.status;
+      const movedCol = statusChanged || newWorkspaceId !== task.workspaceId;
+      const parsedIndex = index !== undefined && index !== null ? toInt(index) : NaN;
+      const targetIndex = Number.isNaN(parsedIndex) ? null : Math.max(0, parsedIndex);
 
-      if (!movedCol && targetIndex === null) {
+      if (!movedCol && (targetIndex === null || targetIndex === task.position)) {
         const spent = await spentSeconds(task.id);
         return res.json(serializeTask(task, spent));
       }
 
-      if (newStatus === 'IN_PROGRESS' && task.status !== 'IN_PROGRESS') {
-        const can = await canStart(userId);
-        if (!can) return fail(res, 400, 'Cannot start task while another is active');
+      if (newStatus === 'IN_PROGRESS' && statusChanged && !(await canStart(userId, task.id))) {
+        return fail(res, 400, 'Cannot start task while another is active');
+      }
+
+      if (newStatus === 'COMPLETED' && !(await canComplete(task))) {
+        return fail(
+          res,
+          400,
+          `Complete becomes available after ${COMPLETION_THRESHOLD * 100}% of the planned time is used`,
+        );
       }
 
       const updated = await prisma.$transaction(async (tx) => {
-        let finalPos = task.position;
-
-        if (movedCol) {
-          finalPos = await nextPosition(tx, {
+        // Target column without the moved task, in display order.
+        const siblings = await tx.task.findMany({
+          where: {
             userId,
             workspaceId: newWorkspaceId,
             status: newStatus,
-          });
+            id: { not: task.id },
+          },
+          orderBy: { position: 'asc' },
+          select: { id: true },
+        });
+
+        const insertAt =
+          targetIndex === null ? siblings.length : Math.min(targetIndex, siblings.length);
+        const ordered = [...siblings.slice(0, insertAt), { id: task.id }, ...siblings.slice(insertAt)];
+
+        // Session bookkeeping before the status flip.
+        if (statusChanged && task.status === 'IN_PROGRESS') {
+          await closeOpenSession(tx, userId, task.id);
         }
 
-        if (targetIndex !== null) {
-          const count = await tx.task.count({
-            where: { userId, workspaceId: newWorkspaceId, status: newStatus },
-          });
-          const maxIdx = movedCol ? count : count - 1;
-          finalPos = Math.max(0, Math.min(targetIndex, maxIdx));
+        const now = new Date();
+        const u = await tx.task.update({
+          where: { id: task.id },
+          data: {
+            status: newStatus,
+            workspaceId: newWorkspaceId,
+            position: insertAt,
+            ...(newStatus === 'IN_PROGRESS' && statusChanged && !task.startedAt
+              ? { startedAt: now }
+              : {}),
+            ...(newStatus === 'COMPLETED' && statusChanged ? { completedAt: now } : {}),
+          },
+        });
+
+        for (let i = 0; i < ordered.length; i++) {
+          if (ordered[i].id === task.id) continue;
+          await tx.task.update({ where: { id: ordered[i].id }, data: { position: i } });
         }
 
-        let u;
-
-        if (!movedCol && finalPos !== task.position) {
-          const up = finalPos < task.position;
-          await tx.task.updateMany({
-            where: {
-              userId,
-              workspaceId: newWorkspaceId,
-              status: newStatus,
-              position: up
-                ? { gte: finalPos, lt: task.position }
-                : { gt: task.position, lte: finalPos },
-            },
-            data: { position: up ? { increment: 1 } : { decrement: 1 } },
-          });
-          u = await tx.task.update({
-            where: { id: task.id },
-            data: { position: finalPos },
-          });
-        } else if (movedCol) {
-          await tx.task.updateMany({
-            where: {
-              userId,
-              workspaceId: newWorkspaceId,
-              status: newStatus,
-              position: { gte: finalPos },
-            },
-            data: { position: { increment: 1 } },
-          });
-
-          u = await tx.task.update({
-            where: { id: task.id },
-            data: {
-              status: newStatus,
-              workspaceId: newWorkspaceId,
-              position: finalPos,
-              // stamp startedAt / completedAt
-              ...(newStatus === 'IN_PROGRESS' && task.status !== 'IN_PROGRESS'
-                ? { startedAt: new Date() }
-                : {}),
-              ...(newStatus === 'COMPLETED'
-                ? { completedAt: new Date() }
-                : {}),
-            },
-          });
-
+        if (movedCol) {
           await reindexColumn(tx, {
             userId,
             workspaceId: task.workspaceId,
             status: task.status,
-          }, task.position + 1);
-        } else {
-          u = task;
+          });
         }
 
-        if (newStatus !== task.status) {
+        if (statusChanged) {
           if (newStatus === 'IN_PROGRESS') {
-            await openSession(tx, u.id);
+            await openSession(tx, userId, u.id);
             await recordActivity(tx, userId, 'TASK_STARTED', { taskId: u.id });
-          } else if (task.status === 'IN_PROGRESS') {
-            const session = await tx.session.findFirst({
-              where: openSessionWhere(u.id),
-            });
-            if (session) {
-              const closed = await closeSession(tx, session);
-              if (closed.committedSeconds > 0) {
-                await recordActivity(tx, userId, 'SESSION_COMPLETED', {
-                  taskId: u.id,
-                  seconds: closed.committedSeconds,
-                });
-              }
-            }
-            const actType =
-              newStatus === 'COMPLETED' ? 'TASK_COMPLETED' : 'STATUS_CHANGED';
-            await recordActivity(tx, userId, actType, {
-              taskId: u.id,
-              from: task.status,
-              to: newStatus,
-            });
           } else {
-            const actType =
-              newStatus === 'COMPLETED' ? 'TASK_COMPLETED' : 'STATUS_CHANGED';
-            await recordActivity(tx, userId, actType, {
-              taskId: u.id,
-              from: task.status,
-              to: newStatus,
-            });
+            await recordActivity(
+              tx,
+              userId,
+              newStatus === 'COMPLETED' ? 'TASK_COMPLETED' : 'STATUS_CHANGED',
+              { taskId: u.id, from: task.status, to: newStatus },
+            );
           }
         }
 
         return u;
       });
 
+      const fresh = await prisma.task.findUnique({ where: { id: updated.id } });
       const spent = await spentSeconds(updated.id);
-      return res.json(serializeTask(updated, spent));
+      return res.json(serializeTask(fresh ?? updated, spent));
     } catch (err) {
       return serverError(res, err);
     }
@@ -670,16 +739,27 @@ class TasksController {
       const userId = req.user.id;
       const task = await findOwnedTask(req.params.taskId, userId);
       if (!task) return fail(res, 404, 'Task not found');
-      if (task.status === 'IN_PROGRESS') {
-        const spent = await spentSeconds(task.id);
-        return res.json(serializeTask(task, spent));
-      }
       if (isLocked(task.status)) return fail(res, 400, 'Task is locked');
 
-      const can = await canStart(userId);
-      if (!can) return fail(res, 400, 'Another task is already active');
+      if (task.startDate && new Date(task.startDate) > new Date()) {
+        return fail(res, 400, 'Task cannot be started before its start date');
+      }
+
+      if (!(await canStart(userId, task.id))) {
+        return fail(res, 400, 'Another task is already active');
+      }
 
       const updated = await prisma.$transaction(async (tx) => {
+        const hasOpen = await tx.taskSession.findFirst({
+          where: openSessionWhere(task.id),
+        });
+
+        if (task.status === 'IN_PROGRESS') {
+          // Repair: IN_PROGRESS task without a running session.
+          if (!hasOpen) await openSession(tx, userId, task.id);
+          return task;
+        }
+
         const pos = await nextPosition(tx, {
           userId,
           workspaceId: task.workspaceId,
@@ -695,13 +775,13 @@ class TasksController {
           },
         });
 
-        await reindexColumn(
-          tx,
-          { userId, workspaceId: task.workspaceId, status: task.status },
-          task.position + 1,
-        );
+        await reindexColumn(tx, {
+          userId,
+          workspaceId: task.workspaceId,
+          status: task.status,
+        });
 
-        await openSession(tx, task.id);
+        if (!hasOpen) await openSession(tx, userId, task.id);
         await recordActivity(tx, userId, 'TASK_STARTED', { taskId: task.id });
 
         return u;
@@ -727,20 +807,7 @@ class TasksController {
       if (isLocked(task.status)) return fail(res, 400, 'Task is locked');
 
       const updated = await prisma.$transaction(async (tx) => {
-        if (task.status === 'IN_PROGRESS') {
-          const session = await tx.session.findFirst({
-            where: openSessionWhere(task.id),
-          });
-          if (session) {
-            const closed = await closeSession(tx, session);
-            if (closed.committedSeconds > 0) {
-              await recordActivity(tx, userId, 'SESSION_COMPLETED', {
-                taskId: task.id,
-                seconds: closed.committedSeconds,
-              });
-            }
-          }
-        }
+        await closeOpenSession(tx, userId, task.id);
 
         const pos = await nextPosition(tx, {
           userId,
@@ -753,11 +820,11 @@ class TasksController {
           data: { status: 'ON_HOLD', position: pos },
         });
 
-        await reindexColumn(
-          tx,
-          { userId, workspaceId: task.workspaceId, status: task.status },
-          task.position + 1,
-        );
+        await reindexColumn(tx, {
+          userId,
+          workspaceId: task.workspaceId,
+          status: task.status,
+        });
 
         await recordActivity(tx, userId, 'STATUS_CHANGED', {
           taskId: task.id,
@@ -786,21 +853,16 @@ class TasksController {
         return res.json(serializeTask(task, spent));
       }
 
+      if (!(await canComplete(task))) {
+        return fail(
+          res,
+          400,
+          `Complete becomes available after ${COMPLETION_THRESHOLD * 100}% of the planned time is used`,
+        );
+      }
+
       const updated = await prisma.$transaction(async (tx) => {
-        if (task.status === 'IN_PROGRESS') {
-          const session = await tx.session.findFirst({
-            where: openSessionWhere(task.id),
-          });
-          if (session) {
-            const closed = await closeSession(tx, session);
-            if (closed.committedSeconds > 0) {
-              await recordActivity(tx, userId, 'SESSION_COMPLETED', {
-                taskId: task.id,
-                seconds: closed.committedSeconds,
-              });
-            }
-          }
-        }
+        await closeOpenSession(tx, userId, task.id);
 
         const pos = await nextPosition(tx, {
           userId,
@@ -813,11 +875,11 @@ class TasksController {
           data: { status: 'COMPLETED', position: pos, completedAt: new Date() },
         });
 
-        await reindexColumn(
-          tx,
-          { userId, workspaceId: task.workspaceId, status: task.status },
-          task.position + 1,
-        );
+        await reindexColumn(tx, {
+          userId,
+          workspaceId: task.workspaceId,
+          status: task.status,
+        });
 
         await recordActivity(tx, userId, 'TASK_COMPLETED', { taskId: task.id });
 
@@ -832,23 +894,23 @@ class TasksController {
   }
 
   // ── POST /api/tasks/:taskId/sync ──────────────────────────────────────────
+  // Checkpoints the running session so tracked time survives a crash.
   static async syncTime(req, res) {
     try {
       const userId = req.user.id;
       const task = await findOwnedTask(req.params.taskId, userId);
       if (!task) return fail(res, 404, 'Task not found');
 
-      const session = await prisma.session.findFirst({
+      const session = await prisma.taskSession.findFirst({
         where: openSessionWhere(task.id),
       });
       if (!session) return fail(res, 400, 'No active session');
 
-      const now = new Date();
-      const elapsed = elapsedBetween(session.startedAt, now);
+      const elapsed = elapsedBetween(session.startedAt, new Date());
 
-      await prisma.session.update({
+      await prisma.taskSession.update({
         where: { id: session.id },
-        data: { committedSeconds: elapsed },
+        data: { durationSeconds: elapsed },
       });
 
       return res.json({ committedSeconds: elapsed });
@@ -857,7 +919,8 @@ class TasksController {
     }
   }
 
-  // ── POST /api/tasks/reorder ───────────────────────────────────────────────
+  // ── PATCH /api/tasks/reorder ──────────────────────────────────────────────
+  // body: { workspaceId, status, ids: string[] }
   static async reorderTasks(req, res) {
     try {
       const userId = req.user.id;
@@ -871,15 +934,16 @@ class TasksController {
 
       await prisma.$transaction(async (tx) => {
         const tasks = await tx.task.findMany({
-          where: { userId, workspaceId, status, id: { in: ids } },
+          where: { userId, workspaceId, status },
+          orderBy: { position: 'asc' },
+          select: { id: true },
         });
         const validIds = new Set(tasks.map((t) => t.id));
-        const filtered = ids.filter((id) => validIds.has(id));
-        for (let i = 0; i < filtered.length; i++) {
-          await tx.task.update({
-            where: { id: filtered[i] },
-            data: { position: i },
-          });
+        const requested = [...new Set(ids)].filter((id) => validIds.has(id));
+        const rest = tasks.map((t) => t.id).filter((id) => !requested.includes(id));
+        const ordered = [...requested, ...rest];
+        for (let i = 0; i < ordered.length; i++) {
+          await tx.task.update({ where: { id: ordered[i] }, data: { position: i } });
         }
       });
 

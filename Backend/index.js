@@ -188,30 +188,6 @@ const cleanup = async () => {
 cleanup();
 setInterval(cleanup, 60 * 60 * 1000); // 1 hour
 
-// Graceful shutdown
-const gracefulShutdown = (signal) => {
-  console.log(`Received ${signal}. Gracefully shutting down...`);
-  
-  const server = app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📖 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  });
-
-  process.on(signal, () => {
-    console.log(`Received ${signal}. Closing HTTP server...`);
-    server.close(async () => {
-      console.log('HTTP server closed');
-      await prisma.$disconnect();
-      console.log('Database connection closed');
-      process.exit(0);
-    });
-  });
-};
-
-// Handle process termination
-['SIGINT', 'SIGTERM'].forEach(gracefulShutdown);
-
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
@@ -225,13 +201,23 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Start server
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📖 Environment: ${process.env.NODE_ENV}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     console.log(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth`);
     console.log(`👥 User endpoints: http://localhost:${PORT}/api/users`);
   });
+
+  const gracefulShutdown = (signal) => {
+    console.log(`Received ${signal}. Closing HTTP server...`);
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+  };
+
+  ['SIGINT', 'SIGTERM'].forEach((signal) => process.once(signal, () => gracefulShutdown(signal)));
 }
 
 module.exports = app;

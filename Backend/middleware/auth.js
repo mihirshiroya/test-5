@@ -198,7 +198,22 @@ const generalRateLimit = require('express-rate-limit')({
   legacyHeaders: false,
 });
 
+// Kanban interactions (drag, start, pause, refetch) are chatty, so task and
+// workspace routes get their own, larger budget instead of sharing the 100/15min
+// general limiter.
+const taskApiRateLimit = require('express-rate-limit')({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
+  taskApiRateLimit,
   authenticate,
   requireVerified,
   authorize,

@@ -34,7 +34,7 @@ export default function NotchNavbar({
 
   const { hasActiveTask } = useTaskStore()
 
-  const { remaining } = useActiveTask()
+  const { remainingSeconds: remaining } = useActiveTask()
 
   const timerText = hasActiveTask
     ? formatDuration(Math.max(0, remaining))

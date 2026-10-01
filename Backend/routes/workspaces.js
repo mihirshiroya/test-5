@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const WorkspacesController = require('../controllers/workspaceController');
-const { authenticate, generalRateLimit } = require('../middleware/auth');
+const { authenticate, taskApiRateLimit } = require('../middleware/auth');
 
-router.use(generalRateLimit);
+router.use(taskApiRateLimit);
 router.use(authenticate);
 
 // Collection

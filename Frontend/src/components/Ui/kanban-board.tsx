@@ -894,7 +894,6 @@ const KanbanColumn = memo(
     draggingId,
     activeTaskId,
     workspaceId,
-    onCreate,
     onEdit,
     onDelete,
   }: KanbanColumnProps) {

@@ -27,12 +27,23 @@ import notesReducer from "./slices/notesSlice";
 const persistConfig = {
   key: "root",
   storage,
+  // "tasks" is intentionally not persisted: a rehydrated status of
+  // "succeeded"/"loading" blocked every refetch, leaving the board showing
+  // stale (or no) data. The server is the source of truth for tasks + timer.
   whitelist: [
     "auth",
     "admin",
-    "tasks",
     "notes",
   ],
+  // Drop any "tasks" blob saved by older builds before it is rehydrated.
+  migrate: (state: unknown) => {
+    if (state && typeof state === "object" && "tasks" in state) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { tasks, ...rest } = state as Record<string, unknown>;
+      return Promise.resolve(rest as never);
+    }
+    return Promise.resolve(state as never);
+  },
 };
 
 // ---------------------------------------------------------------------------

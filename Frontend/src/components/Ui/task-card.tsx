@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, memo } from "react"
+import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd"
 import {
   Clock3,
   Play,
@@ -31,7 +32,7 @@ interface TaskCardProps {
   onEdit: (task: Task) => void
   onDelete: (task: Task) => void
   showWorkspace?: boolean
-  dragHandleProps?: Record<string, unknown>
+  dragHandleProps?: DraggableProvidedDragHandleProps | null
 }
 
 function getPriorityClass(priority: string | undefined) {
@@ -126,7 +127,7 @@ export const TaskCard = memo(function TaskCard({
    * 1 card -> updates its remaining time every second
    * 99 cards -> re-derive remaining only when their own data changes
    */
-  const [remaining, setRemaining] = useState(() =>
+  const [, setRemaining] = useState(() =>
     computeRemaining(task, timer),
   )
 

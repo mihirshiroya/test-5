@@ -4,9 +4,6 @@ import { format } from "date-fns"
 import {
   CalendarDays,
   Clock,
-  Flag,
-  Trash2,
-  Pencil,
   Tag,
   Activity,
 } from "lucide-react"
@@ -17,11 +14,8 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
-  SheetFooter,
 } from "./sheet"
 
-import { Badge } from "./badge"
-import { Button } from "./button"
 import { Separator } from "./separator"
 
 import {
@@ -30,7 +24,6 @@ import {
   useWorkspaceMap,
   STATUS_CONFIG,
   formatDurationLabel,
-  getTaskTimeRange,
   type Task,
 } from "../../lib/tasks"
 
