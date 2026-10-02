@@ -63,6 +63,10 @@ export interface TimerState {
   accumulatedSeconds: number
   lastCheckTime: number | null
   isStale: boolean
+  /** Epoch ms when the unanswered check-in auto-holds the task. */
+  checkDeadline: number | null
+  /** Updated every second so selectors/memos re-render with the live clock. */
+  now: number
 }
 
 /* -------------------------------------------------------------------------- */
@@ -238,6 +242,8 @@ export const IDLE_TIMER: TimerState = {
   accumulatedSeconds: 0,
   lastCheckTime: null,
   isStale: false,
+  checkDeadline: null,
+  now: 0,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -707,15 +713,22 @@ const taskSlice = createSlice({
 
       const now = Date.now()
 
-      if (
-        state.timer.lastCheckTime &&
-        now - state.timer.lastCheckTime >
-          CHECK_INTERVAL_MS + RESPONSE_WINDOW_MS
-      ) {
-        state.timer.isStale = true
+      // Changing `now` each second makes the live clock (notch, panel,
+      // dialog countdown) re-render every second.
+      state.timer.now = now
+
+      // lastCheckTime is the last time the user confirmed (or the session
+      // began). It must NOT be refreshed on every tick, otherwise the
+      // check-in reminder would never fire.
+      if (state.timer.lastCheckTime == null) {
+        state.timer.lastCheckTime = now
+        return
       }
 
-      state.timer.lastCheckTime = now
+      if (!state.timer.isStale && now - state.timer.lastCheckTime >= CHECK_INTERVAL_MS) {
+        state.timer.isStale = true
+        state.timer.checkDeadline = now + RESPONSE_WINDOW_MS
+      }
     },
 
     pendingAdd: (state, action: PayloadAction<string>) => {
@@ -781,6 +794,8 @@ const taskSlice = createSlice({
             accumulatedSeconds: activeAccumulatedSeconds,
             lastCheckTime: sameSession ? prev.lastCheckTime : Date.now(),
             isStale: sameSession ? prev.isStale : false,
+            checkDeadline: sameSession ? prev.checkDeadline : null,
+            now: Date.now(),
           }
         } else {
           state.timer = IDLE_TIMER
@@ -1067,6 +1082,20 @@ export const holdTask =
     return success
   }
 
+/**
+ * Puts every IN_PROGRESS task on hold. Used before logout so a running task
+ * never keeps ticking after the user signs out. Never throws.
+ */
+export const holdAllInProgress =
+  () =>
+  async (dispatch: AppDispatch, getState: () => TasksRootState): Promise<void> => {
+    const running = (getState().tasks?.tasks ?? []).filter(
+      (t) => t.status === "IN_PROGRESS"
+    )
+
+    await Promise.allSettled(running.map((t) => dispatch(holdTask(t.id))))
+  }
+
 export const completeTask =
   (id: string) =>
   async (
@@ -1121,6 +1150,7 @@ export const confirmActive =
           timerUpdated({
             lastCheckTime: Date.now(),
             isStale: false,
+            checkDeadline: null,
           })
         )
       }
@@ -1243,6 +1273,29 @@ export const deleteWorkspace =
 export const runTimerTick = () => (dispatch: AppDispatch) => {
   dispatch(timerTick())
 }
+
+/**
+ * If the check-in popup was not answered within RESPONSE_WINDOW_MS,
+ * move the running task to ON_HOLD.
+ */
+export const autoHoldIfExpired =
+  () =>
+  async (dispatch: AppDispatch, getState: () => TasksRootState): Promise<void> => {
+    const { timer, pendingIds } = getState().tasks
+
+    if (
+      timer.phase !== "running" ||
+      !timer.isStale ||
+      !timer.taskId ||
+      timer.checkDeadline == null ||
+      Date.now() < timer.checkDeadline ||
+      pendingIds.includes(timer.taskId)
+    ) {
+      return
+    }
+
+    await dispatch(holdTask(timer.taskId))
+  }
 
 /* -------------------------------------------------------------------------- */
 /* Hooks                                                                      */
@@ -1396,6 +1449,7 @@ export function useTaskTimerEngine() {
     if (engineConsumers === 1) {
       engineInterval = setInterval(() => {
         dispatch(timerTick())
+        void dispatch(autoHoldIfExpired())
       }, 1000)
     }
 

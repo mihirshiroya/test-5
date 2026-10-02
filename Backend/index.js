@@ -14,6 +14,7 @@ const userRoutes = require('./routes/users');
 const noteRoutes = require('./routes/notes')
 const taskRoutes = require('./routes/tasks')
 const workspaceRoutes = require('./routes/workspaces')
+const analyticsRoutes = require('./routes/analytics')
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -86,6 +87,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {

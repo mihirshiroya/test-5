@@ -6,7 +6,7 @@ import { X } from "lucide-react"
 import {
   useActiveTask,
   useTaskStore,
-  formatDuration,
+  formatClock,
 } from "../store/slices/taskSlice"
 
 import { TimerPanel } from "../components/Ui/timer-panel"
@@ -37,7 +37,7 @@ export default function NotchNavbar({
   const { remainingSeconds: remaining } = useActiveTask()
 
   const timerText = hasActiveTask
-    ? formatDuration(Math.max(0, remaining))
+    ? formatClock(Math.max(0, Math.floor(remaining)))
     : "00:00"
 
   return (

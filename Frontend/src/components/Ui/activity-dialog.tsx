@@ -6,6 +6,7 @@ import {
   useTaskStore,
   formatDuration,
   taskSpentSeconds,
+  RESPONSE_WINDOW_MS,
 } from "../../store/slices/taskSlice"
 
 /**
@@ -46,6 +47,14 @@ export function ActivityDialog() {
   const workspaceLabel = workspace?.name ?? "Workspace"
 
   const spent = taskSpentSeconds(task, timer)
+
+  const secondsLeft = Math.max(
+    0,
+    Math.ceil(((timer.checkDeadline ?? Date.now()) - (timer.now || Date.now())) / 1000)
+  )
+  const progress = Math.min(1, secondsLeft / (RESPONSE_WINDOW_MS / 1000))
+  const RING_R = 52
+  const RING_C = 2 * Math.PI * RING_R
 
   return (
     <div
@@ -103,29 +112,57 @@ export function ActivityDialog() {
             id="checkin-desc"
             className="mt-1.5 max-w-[280px] text-center text-[11px] leading-4 text-muted-foreground"
           >
-            We noticed a gap since your last check-in. Are you still working
-            on this task?
+            Are you still working on this task? If you don&apos;t respond, it
+            will be moved to On Hold automatically.
           </p>
 
           {/* ======================================================== */}
           {/* STATUS                                                    */}
           {/* ======================================================== */}
 
-          <div className="relative my-5 flex size-[108px] flex-col items-center justify-center rounded-full border-4 border-warning-soft">
-            <AlarmClock
-              size={28}
-              className="animate-pulse text-warning"
+          <div
+            className="relative my-5 flex size-[120px] flex-col items-center justify-center"
+            role="timer"
+            aria-live="off"
+          >
+            <svg
+              className="absolute inset-0 -rotate-90"
+              viewBox="0 0 120 120"
               aria-hidden="true"
-            />
+            >
+              <circle
+                cx="60"
+                cy="60"
+                r={RING_R}
+                fill="none"
+                strokeWidth="5"
+                className="stroke-muted"
+              />
+              <circle
+                cx="60"
+                cy="60"
+                r={RING_R}
+                fill="none"
+                strokeWidth="5"
+                strokeLinecap="round"
+                className="stroke-warning transition-[stroke-dashoffset] duration-1000 ease-linear"
+                strokeDasharray={RING_C}
+                strokeDashoffset={RING_C * (1 - progress)}
+              />
+            </svg>
 
-            <span className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
-              {formatDuration(spent)}
+            <span className="font-mono text-3xl font-semibold tabular-nums text-foreground">
+              {secondsLeft}
             </span>
 
             <span className="text-[8px] uppercase tracking-wider text-muted-foreground">
-              spent so far
+              sec to auto-pause
             </span>
           </div>
+
+          <p className="-mt-2 mb-4 text-[10px] text-muted-foreground">
+            {formatDuration(spent)} spent so far
+          </p>
 
           {/* ======================================================== */}
           {/* ACTIONS                                                    */}

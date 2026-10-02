@@ -2,6 +2,7 @@
 import { createSlice, createAsyncThunk,type PayloadAction } from '@reduxjs/toolkit';
 import type { AuthState, LoginRequest, RegisterRequest, GoogleAuthRequest, User } from '../../types';
 import { authApi } from '../../api/auth';
+import { holdAllInProgress } from './taskSlice';
 
 const initialState: AuthState = {
   user: null,
@@ -48,7 +49,10 @@ export const googleAuth = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logout',
-  async (logoutAll: boolean = false, { rejectWithValue }) => {
+  async (logoutAll: boolean = false, { dispatch, rejectWithValue }) => {
+    // Move any running task to ON_HOLD while the session is still valid.
+    await (dispatch as any)(holdAllInProgress());
+
     try {
       if (logoutAll) {
         await authApi.logoutAll();

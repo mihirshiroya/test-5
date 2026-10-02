@@ -1,11 +1,9 @@
-"use client"
-
 import { useEffect, useRef, useState } from "react"
-import { CalendarDays, Clock3, Target, Layers } from "lucide-react"
+import { useSelector } from "react-redux"
+import { CalendarDays, Clock3, Target, Layers, RefreshCw } from "lucide-react"
 import { cn } from "../../lib/utills"
 import { chartColor, sum, useCountUp } from "../../lib/chart-utils"
 import {
-  type SessionHistory as History,
   type SessionRecord,
   durationSeconds,
   formatCompact,
@@ -13,66 +11,46 @@ import {
   formatClock,
 } from "../../lib/time"
 import { SessionGantt } from "./session-gantt"
+import { localDayKey } from "./analytics-data"
+import { useAppDispatch, useAppSelector } from "../../store"
+import { fetchSessions, selectSessions } from "../../store/slices/analyticsSlice"
+import { selectTimer } from "../../store/slices/taskSlice"
 
-const fetcher = (url: string) =>
-  fetch(url).then((r) => r.json() as Promise<History>)
+const DEFAULT_GOAL_SECONDS = 4 * 60 * 60
+const LIVE_REFRESH_MS = 30_000
 
 export function SessionHistory() {
-  const [data, setData] = useState<History>({
-    date: "2026-08-16",
-    goalSeconds: 14400,
-    sessions: [
-      {
-        id: "s1",
-        taskName: "Design system refactor",
-        start: "2026-08-16T02:05:00",
-        end: "2026-08-16T10:12:00",
-      },
-      {
-        id: "s2",
-        taskName: "API integration",
-        start: "2026-08-16T10:30:00",
-        end: "2026-08-16T11:18:00",
-      },
-      {
-        id: "s3",
-        taskName: "Design system refactor",
-        start: "2026-08-16T11:40:00",
-        end: "2026-08-16T12:25:00",
-      },
-      {
-        id: "s4",
-        taskName: "Code review",
-        start: "2026-08-16T13:15:00",
-        end: "2026-08-16T13:52:00",
-      },
-      {
-        id: "s5",
-        taskName: "API integration",
-        start: "2026-08-16T14:10:00",
-        end: "2026-08-16T15:35:00",
-      },
-      {
-        id: "s6",
-        taskName: "Design system refactor",
-        start: "2026-08-16T16:00:00",
-        end: "2026-08-16T16:48:00",
-      },
-      {
-        id: "s7",
-        taskName: "Bug triage",
-        start: "2026-08-16T17:05:00",
-        end: "2026-08-16T17:33:00",
-      },
-    ],
-  })
+  const dispatch = useAppDispatch()
+  const { data: day, status, error, selectedDate } = useAppSelector(selectSessions)
+  const timer = useSelector(selectTimer)
+
+  const current = day && day.date === selectedDate ? day : null
+  const isCurrent = current !== null
+  const sessions: SessionRecord[] = current?.sessions ?? []
+  const goalSeconds = current?.goalSeconds ?? DEFAULT_GOAL_SECONDS
+  const hasRunning = current?.sessions.some((s) => s.running) ?? false
+  const loading = status === "loading" && !isCurrent
+  const today = localDayKey()
+
+  // Load the selected day, and reload when the timer starts/pauses/stops.
+  useEffect(() => {
+    dispatch(fetchSessions(selectedDate))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, selectedDate, timer.phase, timer.taskId])
+
+  // Keep a running session's bar growing while viewing today.
+  useEffect(() => {
+    if (!hasRunning || selectedDate !== today) return
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") dispatch(fetchSessions(selectedDate))
+    }, LIVE_REFRESH_MS)
+    return () => window.clearInterval(interval)
+  }, [dispatch, hasRunning, selectedDate, today])
 
   // Task currently hovered in the donut chart or the task list
   const [activeTask, setActiveTask] = useState<string | null>(null)
 
   const dateInputRef = useRef<HTMLInputElement>(null)
-
-  const { sessions, goalSeconds } = data
 
   // --------------------------------------------------
   // Date picker
@@ -81,14 +59,9 @@ export function SessionHistory() {
   const handleDateChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const selectedDate = event.target.value
-
-    if (!selectedDate) return
-
-    setData((current) => ({
-      ...current,
-      date: selectedDate,
-    }))
+    const date = event.target.value
+    if (!date || date > today) return
+    dispatch(fetchSessions(date))
   }
 
   const openDatePicker = () => {
@@ -172,7 +145,7 @@ export function SessionHistory() {
   // --------------------------------------------------
 
   const dateLabel = new Date(
-    `${data.date}T00:00:00`
+    `${selectedDate}T00:00:00`
   ).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -190,7 +163,20 @@ export function SessionHistory() {
         </div>
 
         {/* Date picker */}
-        <div className="relative font-mono text-4xl font-semibold tabular-nums text-foreground">
+        <div className="relative flex items-center gap-3 font-mono text-4xl font-semibold tabular-nums text-foreground">
+          <button
+            type="button"
+            onClick={() => dispatch(fetchSessions(selectedDate))}
+            disabled={status === "loading"}
+            aria-label="Refresh sessions"
+            className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", status === "loading" && "animate-spin")}
+              aria-hidden="true"
+            />
+          </button>
+
           <button
             type="button"
             onClick={openDatePicker}
@@ -208,7 +194,8 @@ export function SessionHistory() {
           <input
             ref={dateInputRef}
             type="date"
-            value={data.date}
+            value={selectedDate}
+            max={today}
             onChange={handleDateChange}
             className="sr-only"
             aria-hidden="true"
@@ -217,8 +204,30 @@ export function SessionHistory() {
         </div>
       </header>
 
+      {status === "failed" && (
+        <div
+          role="alert"
+          className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-soft p-4 text-sm text-foreground"
+        >
+          <span>{error ?? "Could not load sessions."}</span>
+          <button
+            type="button"
+            onClick={() => dispatch(fetchSessions(selectedDate))}
+            className="border border-soft px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* Stat strip */}
-      <div className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div
+        className={cn(
+          "mb-8 grid grid-cols-2 gap-3 transition-opacity lg:grid-cols-4",
+          loading && "opacity-50"
+        )}
+        aria-busy={loading}
+      >
         <StatCard
           icon={Clock3}
           label="Total Active Time"
@@ -305,12 +314,18 @@ export function SessionHistory() {
       </section>
 
       {/* Two-column layout */}
-      <div className="grid h-[500px] grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:h-[500px] lg:grid-cols-2">
         {/* Sessions */}
         <section className="min-h-0 overflow-y-auto border border-soft bg-card p-6 no-scrollbar">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-foreground">
             Sessions
           </h2>
+
+          {sessions.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              {loading ? "Loading sessions…" : "No focus sessions on this day."}
+            </p>
+          )}
 
           <ol className="flex flex-col">
             {sessions.map(

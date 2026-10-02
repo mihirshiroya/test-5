@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '../api/auth';
 import { useAppDispatch, useAppSelector } from './redux';
 import { clearAuth, updateUser } from '../store/slices/authSlice';
+import { holdAllInProgress } from '../store/slices/taskSlice';
 import type {
   ChangePasswordRequest,
   UpdateProfileRequest,
@@ -18,7 +19,10 @@ export const useAuth = () => {
   const { user, isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
 
   const logout = useMutation({
-    mutationFn: (logoutAll: boolean = false) => authApi.logout(),
+    mutationFn: async (logoutAll: boolean = false) => {
+      await (dispatch as any)(holdAllInProgress());
+      return logoutAll ? authApi.logoutAll() : authApi.logout();
+    },
     onSuccess: () => {
       dispatch(clearAuth());
       queryClient.clear();

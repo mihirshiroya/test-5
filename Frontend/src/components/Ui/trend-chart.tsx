@@ -40,7 +40,7 @@ export function TrendChart({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg text-primary font-semibold">
-              Task completion trends
+              Focus time trends
             </span>
           </div>
         </div>

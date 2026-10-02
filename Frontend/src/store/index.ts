@@ -19,6 +19,7 @@ import authReducer from "./slices/authSlice";
 import adminReducer from "./slices/adminSlice";
 import taskReducer from "./slices/taskSlice";
 import notesReducer from "./slices/notesSlice";
+import analyticsReducer from "./slices/analyticsSlice";
 
 // ---------------------------------------------------------------------------
 // Persist configuration
@@ -55,6 +56,7 @@ const rootReducer = combineReducers({
   admin: adminReducer,
   tasks: taskReducer,
   notes: notesReducer,
+  analytics: analyticsReducer,
 });
 
 // ---------------------------------------------------------------------------

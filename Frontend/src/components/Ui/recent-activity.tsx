@@ -44,6 +44,11 @@ export function RecentActivity({ items }: { items: Activity[] }) {
   return (
     <div className="border border-soft animate-fadeIn flex h-full flex-col p-6">
       <h3 className="text-heading-5 text-primary">Recent activity</h3>
+      {items.length === 0 && (
+        <p className="mt-5 text-body-sm text-steel">
+          No activity yet. Create or start a task to see it here.
+        </p>
+      )}
       <ol className="relative mt-5 flex flex-col">
         {items.map((item, i) => {
           const Icon = ICONS[item.kind]
