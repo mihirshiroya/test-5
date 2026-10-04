@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { Button } from "../components/Ui/auth-controls";
 import AuthLayout, {
   authLinkClass,

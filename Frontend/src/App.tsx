@@ -15,8 +15,7 @@ import {
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { Provider } from 'react-redux';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { Toaster } from 'sonner';
 import TaskTimerEngine from './pages/TaskEngine';
 import {
   PersistGate,
@@ -359,17 +358,12 @@ const App: React.FC = () => {
 
               <AppContent />
 
-              <ToastContainer
+              <Toaster
                 position="top-right"
-                autoClose={5000}
-                hideProgressBar={false}
-                newestOnTop={false}
-                closeOnClick
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-                theme="light"
+                duration={5000}
+                closeButton
+                richColors
+                theme="system"
               />
 
               <ReactQueryDevtools

@@ -4,7 +4,7 @@ import axios, {
   type AxiosRequestConfig,
   type AxiosResponse,
 } from "axios";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 import { store } from "../store";
 import { clearAuth } from "../store/slices/authSlice";
 

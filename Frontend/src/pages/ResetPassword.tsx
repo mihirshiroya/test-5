@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 import { Button } from '../components/Ui/Button';
 import { Input } from '../components/Ui/Input';
 import AuthLayout, {

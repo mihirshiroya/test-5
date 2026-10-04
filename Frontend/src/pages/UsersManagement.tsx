@@ -11,7 +11,7 @@ import {
   deleteUser
 } from '../store/slices/adminSlice';
 import { Search, Filter, ChevronLeft, ChevronRight, Trash2, Ban, CheckCircle, Eye } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 const UsersManagement: React.FC = () => {
   const dispatch = useAppDispatch();

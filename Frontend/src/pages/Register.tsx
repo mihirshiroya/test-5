@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 import { Button, Input } from '../components/Ui/auth-controls';
 import AuthLayout, {

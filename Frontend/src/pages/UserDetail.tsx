@@ -12,7 +12,7 @@ import {
   clearCurrentUser
 } from '../store/slices/adminSlice';
 import { ArrowLeft, Save, Shield, Ban, CheckCircle, Trash2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 const UserDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();

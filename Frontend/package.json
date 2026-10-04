@@ -29,8 +29,8 @@
     "react-dom": "^19.1.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.9.3",
-    "react-toastify": "^11.0.5",
     "redux-persist": "^6.0.0",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.1.13",
     "yup": "^1.7.1"

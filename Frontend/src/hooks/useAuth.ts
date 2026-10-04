@@ -11,7 +11,7 @@ import type {
   ForgotPasswordRequest,
   ResetPasswordRequest
 } from '../types';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 export const useAuth = () => {
   const dispatch = useAppDispatch();
