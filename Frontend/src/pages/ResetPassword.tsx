@@ -6,6 +6,10 @@ import * as Yup from 'yup';
 import { toast } from 'react-toastify';
 import { Button } from '../components/Ui/Button';
 import { Input } from '../components/Ui/Input';
+import AuthLayout, {
+  authLinkClass,
+  authPrimaryButton,
+} from '../components/Ui/auth-Layout';
 import { useAuth } from '../hooks/useAuth';
 
 const resetPasswordSchema = Yup.object().shape({
@@ -47,75 +51,69 @@ const ResetPassword: React.FC = () => {
   if (!token) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-12 w-12 bg-primary-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xl">A</span>
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Reset your password
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your new password below.
-          </p>
-        </div>
+    <AuthLayout
+      eyebrow="Account recovery"
+      headline="Set a new password and keep going"
+      points={[
+        'Use at least 8 characters',
+        'Mix uppercase, lowercase, numbers and symbols',
+        'You can sign in right after resetting',
+      ]}
+      title="Reset your password"
+      description="Enter your new password below."
+      footer={
+        <Link to="/login" className={authLinkClass}>
+          Back to Sign In
+        </Link>
+      }
+    >
+      <Formik
+        initialValues={{ password: '', confirmPassword: '' }}
+        validationSchema={resetPasswordSchema}
+        onSubmit={handleSubmit}
+      >
+        {({ errors, touched, isSubmitting }) => (
+          <Form className="space-y-4">
+            <Field name="password">
+              {({ field }: any) => (
+                <Input
+                  {...field}
+                  type="password"
+                  label="New Password"
+                  placeholder="Enter your new password"
+                  error={touched.password && errors.password ? errors.password : undefined}
+                  helperText="Must contain uppercase, lowercase, number and special character"
+                />
+              )}
+            </Field>
 
-        <div className="bg-white rounded-lg shadow-md p-8">
-          <Formik
-            initialValues={{ password: '', confirmPassword: '' }}
-            validationSchema={resetPasswordSchema}
-            onSubmit={handleSubmit}
-          >
-            {({ errors, touched, isSubmitting }) => (
-              <Form className="space-y-6">
-                <Field name="password">
-                  {({ field }: any) => (
-                    <Input
-                      {...field}
-                      type="password"
-                      label="New Password"
-                      placeholder="Enter your new password"
-                      error={touched.password && errors.password ? errors.password : undefined}
-                      helperText="Must contain uppercase, lowercase, number and special character"
-                    />
-                  )}
-                </Field>
+            <Field name="confirmPassword">
+              {({ field }: any) => (
+                <Input
+                  {...field}
+                  type="password"
+                  label="Confirm New Password"
+                  placeholder="Confirm your new password"
+                  error={
+                    touched.confirmPassword && errors.confirmPassword
+                      ? errors.confirmPassword
+                      : undefined
+                  }
+                />
+              )}
+            </Field>
 
-                <Field name="confirmPassword">
-                  {({ field }: any) => (
-                    <Input
-                      {...field}
-                      type="password"
-                      label="Confirm New Password"
-                      placeholder="Confirm your new password"
-                      error={touched.confirmPassword && errors.confirmPassword ? errors.confirmPassword : undefined}
-                    />
-                  )}
-                </Field>
-
-                <Button
-                  type="submit"
-                  loading={isSubmitting || resetPassword.isPending}
-                  className="w-full"
-                >
-                  Reset Password
-                </Button>
-              </Form>
-            )}
-          </Formik>
-
-          <div className="mt-6 text-center">
-            <Link
-              to="/login"
-              className="font-medium text-primary-600 hover:text-primary-500 transition-colors"
+            <Button
+              type="submit"
+              loading={isSubmitting || resetPassword.isPending}
+              className={authPrimaryButton}
             >
-              Back to Sign In
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
+              Reset Password
+            </Button>
+          </Form>
+        )}
+      </Formik>
+    </AuthLayout>
   );
 };
 
