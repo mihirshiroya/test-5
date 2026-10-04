@@ -35,12 +35,11 @@ export default function NotchNavbar({
   const { isAuthenticated } = useAuth()
 
   const { hasActiveTask } = useTaskStore()
+  const { remainingSeconds: remaining } = useActiveTask()
 
   if (!isAuthenticated) {
     return null
   }
-
-  const { remainingSeconds: remaining } = useActiveTask()
 
   const timerText = hasActiveTask
     ? formatClock(Math.max(0, Math.floor(remaining)))
