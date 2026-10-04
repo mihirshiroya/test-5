@@ -22,7 +22,17 @@ interface NotchNavbarProps {
   radius?: number
 }
 
-export default function NotchNavbar({
+export default function NotchNavbar(props: NotchNavbarProps) {
+  const { isAuthenticated } = useAuth()
+
+  if (!isAuthenticated) {
+    return null
+  }
+
+  return <AuthenticatedNotchNavbar {...props} />
+}
+
+function AuthenticatedNotchNavbar({
   brand = "Notch Buddy",
   ctaLabel = "Buy lifetime license",
   ctaHref = "#",
@@ -32,14 +42,8 @@ export default function NotchNavbar({
   radius = 16,
 }: NotchNavbarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { isAuthenticated } = useAuth()
-
   const { hasActiveTask } = useTaskStore()
   const { remainingSeconds: remaining } = useActiveTask()
-
-  if (!isAuthenticated) {
-    return null
-  }
 
   const timerText = hasActiveTask
     ? formatClock(Math.max(0, Math.floor(remaining)))
