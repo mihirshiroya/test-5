@@ -94,27 +94,25 @@ export default function Overview() {
             </button>
 
             <DropdownMenu open={open} onOpenChange={setOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex h-9 min-w-[110px] items-center justify-between gap-2 border border-soft bg-canvas px-3 text-sm font-medium text-primary outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              <DropdownMenuTrigger
+                type="button"
+                className="inline-flex h-9 min-w-[110px] items-center justify-between gap-2 border border-soft bg-canvas px-3 text-sm font-medium text-primary outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span>{mode === "today" ? "Today" : "This Week"}</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="opacity-60"
                 >
-                  <span>{mode === "today" ? "Today" : "This Week"}</span>
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                    className="opacity-60"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-[140px]">

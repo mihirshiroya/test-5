@@ -1,19 +1,22 @@
 
-
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { Button } from '../components/Ui/Button';
-import { Input } from '../components/Ui/Input';
+
+import { Button, Input } from '../components/Ui/auth-controls';
+
 import AuthLayout, {
   authLinkClass,
   authPrimaryButton,
 } from '../components/Ui/auth-Layout';
+
 import { useAuth } from '../hooks/useAuth';
 
 const forgotPasswordSchema = Yup.object().shape({
-  email: Yup.string().email('Invalid email').required('Email is required'),
+  email: Yup.string()
+    .email('Invalid email')
+    .required('Email is required'),
 });
 
 const ForgotPassword: React.FC = () => {
@@ -54,7 +57,11 @@ const ForgotPassword: React.FC = () => {
                   type="email"
                   label="Email address"
                   placeholder="Enter your email"
-                  error={touched.email && errors.email ? errors.email : undefined}
+                  error={
+                    touched.email && errors.email
+                      ? errors.email
+                      : undefined
+                  }
                 />
               )}
             </Field>
@@ -62,6 +69,7 @@ const ForgotPassword: React.FC = () => {
             <Button
               type="submit"
               loading={isSubmitting || forgotPassword.isPending}
+              disabled={isSubmitting || forgotPassword.isPending}
               className={authPrimaryButton}
             >
               Send Reset Link

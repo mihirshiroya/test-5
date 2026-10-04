@@ -16,7 +16,9 @@ export function Input({ label, error, helperText, id, className = '', ...props }
 
   return (
     <div className="auth-field" data-invalid={error ? true : undefined}>
-      <label htmlFor={inputId}>{label}</label>
+      <label htmlFor={inputId} className="auth-label">
+        {label}
+      </label>
       <input
         {...props}
         id={inputId}

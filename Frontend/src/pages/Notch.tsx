@@ -10,6 +10,7 @@ import {
 } from "../store/slices/taskSlice"
 
 import { TimerPanel } from "../components/Ui/timer-panel"
+import { useAuth } from "../hooks/useAuth"
 
 interface NotchNavbarProps {
   brand?: string
@@ -32,9 +33,28 @@ export default function NotchNavbar({
 }: NotchNavbarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  // --------------------------------------------------
+  // IMPORTANT:
+  // ALL HOOKS MUST RUN BEFORE ANY CONDITIONAL RETURN
+  // --------------------------------------------------
+
+  const { isAuthenticated } = useAuth()
+
   const { hasActiveTask } = useTaskStore()
 
   const { remainingSeconds: remaining } = useActiveTask()
+
+  // --------------------------------------------------
+  // Authentication guard
+  // --------------------------------------------------
+
+  if (!isAuthenticated) {
+    return null
+  }
+
+  // --------------------------------------------------
+  // Timer
+  // --------------------------------------------------
 
   const timerText = hasActiveTask
     ? formatClock(Math.max(0, Math.floor(remaining)))
@@ -48,26 +68,36 @@ export default function NotchNavbar({
       <header className="fixed left-1/2 top-0 z-[9999] -translate-x-1/2">
         <nav
           className="
-            pointer-events-auto relative
-            flex w-fit max-w-[95vw]
-            items-center gap-5
-            border-b-2 border-soft outline-none
-            px-4 py-1
-            shadow-none
-            bg-mauve-950
+            pointer-events-auto
+            relative
+            flex
+            w-fit
+            max-w-[95vw]
+            items-center
+            gap-5
             rounded-b-2xl
-            
+            border-b-2
+            border-soft
+            bg-mauve-950
+            px-4
+            py-1
+            shadow-none
+            outline-none
           "
           style={{
             backgroundColor: barBg,
           }}
         >
-          {/* LEFT FLARE */}
+          {/* =========================
+              LEFT FLARE
+          ========================== */}
           <span
             aria-hidden="true"
             className="
-              pointer-events-none absolute
-              bottom-[28px] right-full
+              pointer-events-none
+              absolute
+              bottom-[28px]
+              right-full
               overflow-hidden
             "
             style={{
@@ -79,21 +109,28 @@ export default function NotchNavbar({
             <span
               className="
                 absolute
-                right-0 top-0
-                h-[200%] w-[200%]
+                right-0
+                top-0
+                h-[200%]
+                w-[200%]
                 rounded-t-full
-                border border-soft
+                border
+                border-soft
                 bg-[var(--color-background)]
               "
             />
           </span>
 
-          {/* RIGHT FLARE */}
+          {/* =========================
+              RIGHT FLARE
+          ========================== */}
           <span
             aria-hidden="true"
             className="
-              pointer-events-none absolute
-              bottom-[28px] left-full
+              pointer-events-none
+              absolute
+              bottom-[28px]
+              left-full
               overflow-hidden
             "
             style={{
@@ -105,16 +142,17 @@ export default function NotchNavbar({
             <span
               className="
                 absolute
-                left-0 top-0
-                h-[200%] w-[200%]
+                left-0
+                top-0
+                h-[200%]
+                w-[200%]
                 rounded-t-full
-                border border-soft
+                border
+                border-soft
                 bg-[var(--color-background)]
               "
             />
           </span>
-
-        
 
           {/* =========================
               TIMER NOTCH BUTTON
@@ -161,8 +199,6 @@ export default function NotchNavbar({
               {timerText}
             </span>
           </button>
-
-       
         </nav>
       </header>
 
@@ -208,7 +244,9 @@ export default function NotchNavbar({
           }
         `}
       >
-        {/* Sidebar header */}
+        {/* =========================
+            SIDEBAR HEADER
+        ========================== */}
         <div
           className="
             flex
@@ -221,6 +259,7 @@ export default function NotchNavbar({
           "
         >
           <div className="flex items-center gap-2">
+            {/* Timer status */}
             <div
               className={`
                 h-2
@@ -239,6 +278,7 @@ export default function NotchNavbar({
             </span>
           </div>
 
+          {/* Close button */}
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
@@ -259,7 +299,9 @@ export default function NotchNavbar({
           </button>
         </div>
 
-        {/* Complete TimerPanel */}
+        {/* =========================
+            TIMER PANEL
+        ========================== */}
         <div className="h-[calc(100dvh-56px)] overflow-hidden">
           <TimerPanel />
         </div>

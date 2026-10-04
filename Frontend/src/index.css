@@ -1690,3 +1690,14 @@ select::-webkit-scrollbar-thumb:hover {
 @media (prefers-reduced-motion: reduce) {
   .auth-layout *, .auth-layout *::before, .auth-layout *::after { animation: none !important; transition: none !important; }
 }
+
+.auth-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--auth-ink);
+  font-family: sans-serif;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}

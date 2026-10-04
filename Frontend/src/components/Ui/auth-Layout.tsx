@@ -2,6 +2,7 @@ import React from 'react';
 import { Check } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import halftoneBackground from '../../assets/auth-halftone.png';
+import textlogo from '../../assets/text-logo.png';
 
 interface AuthLayoutProps {
   /* Left panel */
@@ -134,13 +135,20 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
         <div className="auth-background" style={backgroundStyle} aria-hidden="true" />
         {/* Card */}
         <div className="auth-card">
-          <div className="auth-logo"><img src={logo} alt="Workspace logo" /></div>
+          <div className="w-full flex items-center justify-center gap-3 mb-6">
+  
+
+  <img
+    src={textlogo}
+    alt="Workspace"
+    className="h-8 w-auto object-contain"
+  />
+</div>
           {/* Inner bordered box with handles wrapping the form */}
           <div className="auth-form-frame">
             <CornerHandles />
             <header className="auth-form-heading">
-              <h2 id="auth-form-title">{title}</h2>
-              {description && <p>{description}</p>}
+     
             </header>
             {children}
             {footer && <div className="auth-footer">{footer}</div>}
