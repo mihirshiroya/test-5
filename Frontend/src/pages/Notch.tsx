@@ -10,6 +10,7 @@ import {
 } from "../store/slices/taskSlice"
 
 import { TimerPanel } from "../components/Ui/timer-panel"
+import { useAuth } from "../hooks/useAuth"
 
 interface NotchNavbarProps {
   brand?: string
@@ -31,8 +32,13 @@ export default function NotchNavbar({
   radius = 16,
 }: NotchNavbarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { isAuthenticated } = useAuth()
 
   const { hasActiveTask } = useTaskStore()
+
+  if (!isAuthenticated) {
+    return null
+  }
 
   const { remainingSeconds: remaining } = useActiveTask()
 
