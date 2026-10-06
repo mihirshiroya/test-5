@@ -1,8 +1,9 @@
 import React from 'react';
-import { Check } from 'lucide-react';
+import { CheckCheck } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import halftoneBackground from '../../assets/auth-halftone.png';
 import textlogo from '../../assets/text-logo.png';
+import getstarted from '../../assets/28-get-started.png';
 
 interface AuthLayoutProps {
   /* Left panel */
@@ -101,32 +102,76 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
       {/* =====================================================
           Left: message panel with frame + handles (desktop only)
       ====================================================== */}
-      <section className="auth-editorial" aria-label="Your workspace">
-        {/* Frame lines running off toward the center divide */}
-        <div aria-hidden="true" className="auth-editorial-frame">
-          <Handle position="-left-[4px] -top-[4px]" />
-          <Handle position="-left-[4px] -bottom-[4px]" />
-        </div>
-        <div className="auth-editorial-content">
-          <span className="auth-eyebrow">{eyebrow}</span>
-          <h1 className="auth-headline">{headline}</h1>
-          {points.length > 0 && (
-            <ul className="auth-benefits">
-              {points.map((point) => (
-                <li key={point}>
-                  <span className="auth-check"><Check size={11} strokeWidth={2} aria-hidden="true" /></span>
-                  <span>{point}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="auth-wordmarks" aria-label={brands.length ? 'Partners' : 'Workspace features'}>
-            {wordmarks.map((wordmark, i) => (
-              <span key={wordmark} className={brandStyles[i % brandStyles.length]}>{wordmark}</span>
-            ))}
-          </div>
-        </div>
-      </section>
+      <section className="auth-editorial relative" aria-label="Your workspace">
+  {/* Frame lines running off toward the center divide */}
+  <div aria-hidden="true" className="auth-editorial-frame">
+    <Handle position="-left-[4px] -top-[4px]" />
+    <Handle position="-left-[4px] -bottom-[4px]" />
+  </div>
+
+  <div className="auth-editorial-content">
+    <span className="auth-eyebrow">
+  <span className="auth-eyebrow-x auth-eyebrow-x-tl">×</span>
+  <span className="auth-eyebrow-x auth-eyebrow-x-tr">×</span>
+
+  {eyebrow}
+
+  <span className="auth-eyebrow-x auth-eyebrow-x-bl">×</span>
+  <span className="auth-eyebrow-x auth-eyebrow-x-br">×</span>
+</span>
+
+    <h1 className="auth-headline">{headline}</h1>
+
+    {points.length > 0 && (
+      <ul className="auth-benefits">
+        {points.map((point) => (
+          <li key={point}>
+            <span className="auth-check">
+              <CheckCheck
+                size={13}
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+            </span>
+
+            <span>{point}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+
+    <div
+      className="auth-wordmarks"
+      aria-label={brands.length ? "Partners" : "Workspace features"}
+    >
+      {wordmarks.map((wordmark, i) => (
+        <span
+          key={wordmark}
+          className={brandStyles[i % brandStyles.length]}
+        >
+          {wordmark}
+        </span>
+      ))}
+    </div>
+  </div>
+
+  {/* Get Started Image */}
+  <img
+    src={getstarted}
+    alt="Get started with Consistent"
+    className="
+      absolute
+      right-[10px]
+      top-1/2
+      -translate-y-1/2
+      w-72
+      h-72
+      object-contain
+      pointer-events-none
+      select-none
+    "
+  />
+</section>
 
       {/* =====================================================
           Right: halftone gradient + card with handles

@@ -1624,7 +1624,42 @@ select::-webkit-scrollbar-thumb:hover {
 .auth-handle { border: 1px solid var(--auth-line); background: var(--auth-paper); }
 .auth-editorial-frame > .auth-handle { width: 9px; height: 9px; border-color: var(--auth-muted); }
 .auth-editorial-content { position: relative; width: 100%; max-width: 420px; }
-.auth-eyebrow { display: inline-block; padding: 4px 7px; border: 1px solid var(--auth-line); font-weight: 500; }
+.auth-eyebrow {
+  position: relative;
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid #080808;
+  font-weight: 700 !important;
+}
+
+.auth-eyebrow-x {
+  position: absolute;
+  font-size: 13px;
+  line-height: 1;
+  background: #fff;
+  color: #080808;
+  padding: 0 2px;
+}
+
+.auth-eyebrow-x-tl {
+  top: -7px;
+  left: -7px;
+}
+
+.auth-eyebrow-x-tr {
+  top: -7px;
+  right: -7px;
+}
+
+.auth-eyebrow-x-bl {
+  bottom: -7px;
+  left: -7px;
+}
+
+.auth-eyebrow-x-br {
+  bottom: -7px;
+  right: -7px;
+}
 .auth-headline {
   max-width: 390px;
   margin: 32px 0 20px;
@@ -1637,7 +1672,7 @@ select::-webkit-scrollbar-thumb:hover {
 }
 .auth-benefits { display: flex; flex-direction: column; gap: 10px; padding: 0; margin: 0; list-style: none; }
 .auth-benefits li { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 18px; }
-.auth-check { display: flex; align-items: center; justify-content: center; flex: 0 0 15px; height: 15px; margin-top: 1px; background: var(--auth-accent); color: var(--auth-wordmark); }
+.auth-check { display: flex; align-items: center; justify-content: center; flex: 0 0 15px; height: 15px; margin-top: 1px; color: var(--auth-wordmark); }
 .auth-wordmarks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 16px 20px; margin-top: 64px; color: var(--auth-wordmark); font-size: clamp(13px, 1.65vw, 20px); line-height: 1; }
 .auth-wordmarks span { width: fit-content; }
 .auth-wordmarks span:nth-child(5) { padding: 4px 5px; background: var(--auth-wordmark); color: var(--auth-paper); font-family: Georgia, serif; font-size: 13px; transform: rotate(-3deg); }
