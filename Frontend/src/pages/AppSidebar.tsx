@@ -26,7 +26,9 @@ import {
 import { cn } from '../lib/utills'
 import ThemeSwitcher from './ThemeSwitcher'
 import logo from '../assets/logo.png'
-import textlogo from '../assets/text-logo.png'  
+import textlogo from '../assets/text-logo.png'
+import noResultsRaw from '../assets/31-no-results.svg?raw'
+import { ThemedSvg } from '../lib/svg-theme'
 import {
   ProjectDialog,
   type ProjectDraft,
@@ -514,8 +516,28 @@ function AppSidebar() {
             </div>
 
             {/* Workspace list */}
-            <ul className="flex flex-col gap-0.5">
-              {filteredProjects.map((project) => {
+            {filteredProjects.length === 0 ? (
+              <div
+                className={cn(
+                  'flex flex-col items-center gap-2 rounded-xl px-3 py-5 text-center',
+                  collapsed && 'md:px-0',
+                )}
+              >
+                <ThemedSvg
+                  raw={noResultsRaw}
+                  ariaLabel="No workspaces found"
+                  className={cn('h-20 w-20', collapsed && 'md:h-10 md:w-10')}
+                />
+                <div className={cn('flex flex-col gap-1', collapsed && 'md:hidden')}>
+                  <p className="text-xs font-medium text-foreground">No workspaces yet</p>
+                  <p className="text-[11px] leading-4 text-muted-foreground">
+                    Create one to start organizing your work.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-0.5">
+                {filteredProjects.map((project) => {
                 const ProjectIcon =
                   FOLDER_ICONS[project.icon] ??
                   FOLDER_ICONS[DEFAULT_APPEARANCE.icon]
@@ -579,8 +601,9 @@ function AppSidebar() {
                     </NavLink>
                   </li>
                 )
-              })}
-            </ul>
+                })}
+              </ul>
+            )}
           </nav>
         </aside>
 
