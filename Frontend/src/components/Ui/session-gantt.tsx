@@ -3,6 +3,9 @@ import {
   durationSeconds,
   formatCompact,
 } from "../../lib/time"
+import { ThemedSvg } from "../../lib/svg-theme"
+import noResultsRaw from "../../assets/31-no-results.svg?raw"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./empty"
 
 interface SessionGanttProps {
   sessions: SessionRecord[]
@@ -43,9 +46,18 @@ export function SessionGantt({
 }: SessionGanttProps) {
   if (!sessions.length) {
     return (
-      <div className="flex min-h-24 items-center justify-center rounded-md border border-dashed border-border text-sm text-muted-foreground">
-        No sessions to display
-      </div>
+      <Empty className="min-h-40 rounded-md px-4 py-5">
+        <EmptyHeader>
+          <ThemedSvg
+            raw={noResultsRaw}
+            ariaLabel="No sessions"
+            className="mx-auto mb-2 h-40 w-40 [&>svg]:h-full [&>svg]:w-full"
+          />
+          <EmptyTitle>No sessions to display</EmptyTitle>
+          <EmptyDescription className="text-center text-body-sm text-steel">Start a focus session to see it on your timeline.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent />
+      </Empty>
     )
   }
 

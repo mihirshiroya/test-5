@@ -5,7 +5,14 @@ import {
   formatMinutes,
 } from "../Ui/analytics-data"
 import { ThemedSvg } from "../../lib/svg-theme"
-import timeBlockingRaw from "../../assets/29-time-blocking.svg?raw"
+import growthChartRaw from "../../assets/18-growth-chart.svg?raw"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "./empty"
 
 // Inline SVG fractal noise texture for the grain effect
 const GRAIN_TEXTURE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4'/%3E%3C/svg%3E")`
@@ -144,17 +151,20 @@ export function TrendChart({
             })}
           </div>
         ) : (
-          <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 text-center">
-            <ThemedSvg
-              raw={timeBlockingRaw}
-              ariaLabel="Time blocking illustration"
-              className="h-32 w-32"
-            />
-            <p className="text-sm text-secondary">No focus time recorded yet</p>
-            <p className="max-w-xs text-caption text-steel">
-              Start a focused task to see your time trends here.
-            </p>
-          </div>
+          <Empty className="relative z-10 h-full min-h-[280px] border-0 p-0">
+            <EmptyHeader>
+              <ThemedSvg
+                raw={growthChartRaw}
+                ariaLabel="Growth chart illustration"
+                className="mx-auto mb-2 h-40 w-40 [&>svg]:h-full [&>svg]:w-full"
+              />
+              <EmptyTitle>No focus time recorded yet</EmptyTitle>
+              <EmptyDescription className="text-center text-body-sm text-steel">
+                Start a focused task to see your time trends here.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent />
+          </Empty>
         )}
       </div>
     </div>

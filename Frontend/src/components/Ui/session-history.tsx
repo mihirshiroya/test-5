@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useSelector } from "react-redux"
-import { CalendarDays, Clock3, Target, Layers, RefreshCw } from "lucide-react"
+import { ArrowRight, CalendarDays, Clock3, Target, Layers, RefreshCw } from "lucide-react"
 import { cn } from "../../lib/utills"
 import { chartColor, sum, useCountUp } from "../../lib/chart-utils"
 import {
@@ -11,6 +11,9 @@ import {
   formatClock,
 } from "../../lib/time"
 import { SessionGantt } from "./session-gantt"
+import { ThemedSvg } from "../../lib/svg-theme"
+import noResultsRaw from "../../assets/31-no-results.svg?raw"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from './empty'
 import { Input } from './input'
 import { localDayKey } from "./analytics-data"
 import { useAppDispatch, useAppSelector } from "../../store"
@@ -257,44 +260,45 @@ export function SessionHistory() {
         />
       </div>
 
-      {/* Goal progress bar */}
-      <div className="mb-10 flex flex-col gap-2">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">
-            Daily goal progress
-          </span>
+      {/* Daily goal progress */}
+      <section className="mb-10 flex flex-col gap-6 border border-soft bg-card p-6">
+        <div>
+          <div className="mb-3 flex justify-between text-xs">
+            <span>Daily goal</span>
+            <span className="font-mono tabular-nums text-primary">
+              {formatDuration(totalSeconds)} / {formatDuration(goalSeconds)}
+            </span>
+          </div>
 
-          <span className="font-mono tabular-nums text-foreground">
-            {formatDuration(totalSeconds)} /{" "}
-            {formatDuration(goalSeconds)}
-          </span>
+          <div
+            className="flex gap-1"
+            role="progressbar"
+            aria-label="Daily goal progress"
+            aria-valuenow={Math.round(goalPercent)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            {Array.from({ length: 40 }, (_, index) => (
+              <span
+                key={index}
+                className={cn(
+                  "h-6 flex-1 border border-soft",
+                  index < Math.round(goalPercent / 2.5)
+                    ? "bg-primary"
+                    : "bg-slate-700/10"
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="mt-3 flex justify-between font-mono text-[10px] text-muted-foreground">
+            <span>{Math.round(totalSeconds / 3600)} / {Math.round(goalSeconds / 3600)} HOURS</span>
+            <span>{goalPercent >= 100 ? "GOAL COMPLETE" : "KEEP GOING ↗"}</span>
+          </div>
         </div>
 
-        <div
-          className="flex h-2.5 w-full overflow-hidden bg-secondary"
-          role="progressbar"
-          aria-valuenow={Math.round(goalPercent)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
-          {byTask.map((task) => (
-            <div
-              key={task.name}
-              style={{
-                width: `${
-                  goalSeconds > 0
-                    ? (task.seconds /
-                        goalSeconds) *
-                      100
-                    : 0
-                }%`,
-                backgroundColor:
-                  task.color,
-              }}
-            />
-          ))}
-        </div>
-      </div>
+      
+      </section>
 
       {/* Timeline chart panel */}
       <section className="mb-10 border border-soft bg-card p-6">
@@ -323,9 +327,20 @@ export function SessionHistory() {
           </h2>
 
           {sessions.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              {loading ? "Loading sessions…" : "No focus sessions on this day."}
-            </p>
+            <Empty className="min-h-40 p-2">
+              <EmptyHeader>
+                <ThemedSvg
+                  raw={noResultsRaw}
+                  ariaLabel="No sessions"
+                  className="mx-auto mb-2 h-40 w-40 [&>svg]:h-full [&>svg]:w-full"
+                />
+                <EmptyTitle>{loading ? "Loading sessions…" : "No focus sessions on this day."}</EmptyTitle>
+                <EmptyDescription className="text-center text-body-sm text-steel">
+                  Complete a focus session to build your daily history.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent />
+            </Empty>
           )}
 
           <ol className="flex flex-col">
@@ -355,87 +370,78 @@ export function SessionHistory() {
             By Task
           </h2>
 
-          {/* Donut chart */}
-          <div className="mb-6 flex justify-center">
-            <TaskDonut
-              tasks={byTask}
-              totalSeconds={totalSeconds}
-              activeTask={activeTask}
-              onActiveChange={setActiveTask}
-            />
-          </div>
+          {byTask.length === 0 ? (
+            <Empty className="min-h-40 p-2">
+              <EmptyHeader>
+                <ThemedSvg
+                  raw={noResultsRaw}
+                  ariaLabel="No task activity"
+                  className="mx-auto mb-2 h-40 w-40 [&>svg]:h-full [&>svg]:w-full"
+                />
+                <EmptyTitle>No task activity to summarize.</EmptyTitle>
+                <EmptyDescription className="text-center text-body-sm text-steel">Focus sessions will appear here grouped by task.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent />
+            </Empty>
+          ) : (
+            <>
+              {/* Donut chart */}
+              <div className="mb-6 flex justify-center">
+                <TaskDonut
+                  tasks={byTask}
+                  totalSeconds={totalSeconds}
+                  activeTask={activeTask}
+                  onActiveChange={setActiveTask}
+                />
+              </div>
 
-          {/* Task list */}
-          <ul className="flex flex-col gap-4">
-            {byTask.map((task) => {
-              const percent =
-                totalSeconds > 0
-                  ? Math.round(
-                      (task.seconds /
-                        totalSeconds) *
-                        100
-                    )
-                  : 0
+              {/* Task list */}
+              <ul className="flex flex-col gap-4">
+                {byTask.map((task) => {
+                  const percent =
+                    totalSeconds > 0
+                      ? Math.round((task.seconds / totalSeconds) * 100)
+                      : 0
 
-              const dimmed =
-                activeTask !== null &&
-                activeTask !== task.name
+                  const dimmed = activeTask !== null && activeTask !== task.name
 
-              return (
-                <li
-                  key={task.name}
-                  className={cn(
-                    "flex flex-col gap-2 transition-opacity duration-200",
-                    dimmed && "opacity-40"
-                  )}
-                  onMouseEnter={() =>
-                    setActiveTask(task.name)
-                  }
-                  onMouseLeave={() =>
-                    setActiveTask(null)
-                  }
-                >
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2 font-medium text-foreground">
-                      {task.name}
-                    </span>
-
-                    <span className="font-mono tabular-nums text-muted-foreground">
-                      {formatCompact(
-                        task.seconds
+                  return (
+                    <li
+                      key={task.name}
+                      className={cn(
+                        "flex flex-col gap-2 transition-opacity duration-200",
+                        dimmed && "opacity-40"
                       )}
-                    </span>
-                  </div>
+                      onMouseEnter={() => setActiveTask(task.name)}
+                      onMouseLeave={() => setActiveTask(null)}
+                    >
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2 font-medium text-foreground">
+                          {task.name}
+                        </span>
+                        <span className="font-mono tabular-nums text-muted-foreground">
+                          {formatCompact(task.seconds)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden bg-secondary">
+                        <div
+                          className="h-full"
+                          style={{
+                            width: `${(task.seconds / totalSeconds) * 100}%`,
+                            backgroundColor: task.color,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {task.count} {task.count === 1 ? "session" : "sessions"} · {percent}% of total
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
 
-                  <div className="h-1.5 w-full overflow-hidden bg-secondary">
-                    <div
-                      className="h-full"
-                      style={{
-                        width:
-                          totalSeconds > 0
-                            ? `${
-                                (task.seconds /
-                                  totalSeconds) *
-                                100
-                              }%`
-                            : "0%",
-                        backgroundColor:
-                          task.color,
-                      }}
-                    />
-                  </div>
-
-                  <span className="text-xs text-muted-foreground">
-                    {task.count}{" "}
-                    {task.count === 1
-                      ? "session"
-                      : "sessions"}{" "}
-                    · {percent}% of total
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
         </section>
       </div>
     </div>
@@ -462,7 +468,7 @@ const DONUT_GAP = 3
 
 function truncate(text: string, max: number) {
   return text.length > max
-    ? `${text.slice(0, max - 1)}…`
+    ? `${text.slice(0, max - 1)}��`
     : text
 }
 

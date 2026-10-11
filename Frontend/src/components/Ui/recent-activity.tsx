@@ -7,6 +7,8 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import type { Activity } from "../Ui/analytics-data"
+import { ThemedSvg } from "../../lib/svg-theme"
+import noResultsRaw from "../../assets/31-no-results.svg?raw"
 
 const ICONS: Record<Activity["kind"], LucideIcon> = {
   completed: CircleCheck,
@@ -44,13 +46,20 @@ export function RecentActivity({ items }: { items: Activity[] }) {
   return (
     <div className="border border-soft animate-fadeIn flex h-full flex-col p-6">
       <h3 className="text-heading-5 text-primary">Recent activity</h3>
-      {items.length === 0 && (
-        <p className="mt-5 text-body-sm text-steel">
-          No activity yet. Create or start a task to see it here.
-        </p>
-      )}
-      <ol className="relative mt-5 flex flex-col">
-        {items.map((item, i) => {
+      {items.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-8 text-center">
+          <ThemedSvg
+            raw={noResultsRaw}
+            ariaLabel="No recent activity"
+            className="mb-4 h-28 w-28"
+          />
+          <p className="text-body-sm text-steel">
+            No activity yet. Create or start a task to see it here.
+          </p>
+        </div>
+      ) : (
+        <ol className="relative mt-5 flex max-h-[360px] flex-col no-scrollbar overflow-y-auto pr-2">
+          {items.map((item, i) => {
           const Icon = ICONS[item.kind]
           const kindStyle = KIND_STYLES[item.kind]
           const isFirst = i === 0
@@ -107,7 +116,8 @@ export function RecentActivity({ items }: { items: Activity[] }) {
             </li>
           )
         })}
-      </ol>
+        </ol>
+      )}
     </div>
   )
 }

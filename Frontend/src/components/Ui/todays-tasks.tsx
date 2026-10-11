@@ -106,7 +106,7 @@ export function TodaysTasks() {
 
             <EmptyTitle>No tasks for today</EmptyTitle>
 
-            <EmptyDescription>
+            <EmptyDescription className="text-center text-body-sm text-steel">
               You don&apos;t have any tasks scheduled for today.
             </EmptyDescription>
           </EmptyHeader>

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { ThemedSvg } from '../lib/svg-theme'
+import journalRaw from '../assets/10-journal.svg?raw'
 
 import {
   addFolder,
@@ -270,9 +272,18 @@ export function Notes() {
               ))}
             </div>
           ) : (
-            <p className="border border-dashed border-soft p-12 text-center text-sm text-steel">
-              No folders found.
-            </p>
+            <div className="flex min-h-[320px] flex-col items-center justify-center border border-dashed border-soft px-6 py-10 text-center">
+              <ThemedSvg
+                raw={journalRaw}
+                className="mb-4 h-32 w-32 [&>svg]:h-full [&>svg]:w-full"
+              />
+              <h2 className="text-base font-medium text-ink">
+                No notes found
+              </h2>
+              <p className="mt-1 max-w-xs text-sm text-steel">
+                Start a note to capture your thoughts and keep them organized.
+              </p>
+            </div>
           )}
         </div>
       </main>
