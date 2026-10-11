@@ -517,24 +517,21 @@ function AppSidebar() {
 
             {/* Workspace list */}
             {filteredProjects.length === 0 ? (
-              <div
-                className={cn(
-                  'flex flex-col items-center gap-2 rounded-xl px-3 py-5 text-center',
-                  collapsed && 'md:px-0',
-                )}
-              >
-                <ThemedSvg
-                  raw={noResultsRaw}
-                  ariaLabel="No workspaces found"
-                  className={cn('h-20 w-20', collapsed && 'md:h-10 md:w-10')}
-                />
-                <div className={cn('flex flex-col gap-1', collapsed && 'md:hidden')}>
-                  <p className="text-xs font-medium text-foreground">No workspaces yet</p>
-                  <p className="text-[11px] leading-4 text-muted-foreground">
-                    Create one to start organizing your work.
-                  </p>
+              !collapsed && (
+                <div className="flex flex-col items-center gap-2 rounded-xl px-3 py-5 text-center">
+                  <ThemedSvg
+                    raw={noResultsRaw}
+                    ariaLabel="No workspaces found"
+                    className="h-20 w-20"
+                  />
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs font-medium text-foreground">No workspaces yet</p>
+                    <p className="text-[11px] leading-4 text-muted-foreground">
+                      Create one to start organizing your work.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               <ul className="flex flex-col gap-0.5">
                 {filteredProjects.map((project) => {
