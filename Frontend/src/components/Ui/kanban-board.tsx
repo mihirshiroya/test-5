@@ -9,6 +9,7 @@ import {
   useState,
 } from "react"
 import confetti from "canvas-confetti"
+import { Input } from './input'
 import {
   DragDropContext,
   Draggable,
@@ -623,7 +624,7 @@ export function KanbanBoard({
               aria-hidden="true"
             />
 
-            <input
+            <Input
               type="search"
               value={searchQuery}
               onChange={(event) =>

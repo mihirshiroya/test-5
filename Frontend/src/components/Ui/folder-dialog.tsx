@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 
 import { cn } from '../../lib/utills'
 import { Button } from './Button'
+import { Input } from './input'
 
 import {
   FOLDER_TINTS,
@@ -135,7 +136,7 @@ export function FolderDialog({
           Folder name
         </label>
 
-        <input
+        <Input
           id="folder-title"
           autoFocus
           value={title}

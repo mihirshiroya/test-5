@@ -11,6 +11,7 @@ import {
   formatClock,
 } from "../../lib/time"
 import { SessionGantt } from "./session-gantt"
+import { Input } from './input'
 import { localDayKey } from "./analytics-data"
 import { useAppDispatch, useAppSelector } from "../../store"
 import { fetchSessions, selectSessions } from "../../store/slices/analyticsSlice"
@@ -191,7 +192,7 @@ export function SessionHistory() {
             <span>{dateLabel}</span>
           </button>
 
-          <input
+          <Input
             ref={dateInputRef}
             type="date"
             value={selectedDate}
