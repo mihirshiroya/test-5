@@ -3,7 +3,10 @@ import { CheckCheck } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import halftoneBackground from '../../assets/auth-halftone.png';
 import textlogo from '../../assets/text-logo.png';
-import getstarted from '../../assets/28-get-started.png';
+import getstarted from '../../assets/28-get-started.svg?raw';
+import { THEMES, themeSvg } from "../../lib/svg-theme"
+import { useEffect, useMemo, useState } from "react"
+
 
 interface AuthLayoutProps {
   /* Left panel */
@@ -20,6 +23,8 @@ interface AuthLayoutProps {
 
   children: React.ReactNode;
 }
+
+
 
 /* Shared class names so every auth screen has identical buttons */
 export const authPrimaryButton = 'auth-button auth-button--primary';
@@ -47,6 +52,8 @@ export const GoogleIcon: React.FC = () => (
   </svg>
 );
 
+
+
 export const AuthDivider: React.FC = () => (
   <div className="auth-divider"><span>OR</span></div>
 );
@@ -68,6 +75,36 @@ const CornerHandles: React.FC = () => (
     <Handle position="-right-[4px] -bottom-[4px]" />
   </>
 );
+
+/* ---------- Theme-aware inline SVG ---------- */
+function ThemedSvg({
+  raw,
+  className,
+}: {
+  raw: string
+  className?: string
+}) {
+  const html = useMemo(() => themeSvg(raw), [raw])
+
+  const t = THEMES.light
+
+  const vars = {
+    "--svg-ink": t.ink,
+    "--svg-accent": t.accent,
+    "--svg-soft": t.soft,
+    "--svg-bg": "transparent",
+  } as CSSProperties
+
+  return (
+    <div
+      className={className}
+      style={vars}
+      role="img"
+      aria-label="Get started illustration"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
 
 /* Halftone dot texture layered over the blue-violet gradient (right panel) */
 const backgroundStyle: React.CSSProperties = {
@@ -156,21 +193,20 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   </div>
 
   {/* Get Started Image */}
-  <img
-    src={getstarted}
-    alt="Get started with Consistent"
-    className="
-      absolute
-      right-[10px]
-      top-1/2
-      -translate-y-1/2
-      w-72
-      h-72
-      object-contain
-      pointer-events-none
-      select-none
-    "
-  />
+  <ThemedSvg
+  raw={getstarted}
+  className="
+    absolute
+    right-[10px]
+    top-1/2
+    -translate-y-1/2
+    size-80
+    [&>svg]:h-full
+    [&>svg]:w-full
+    pointer-events-none
+    select-none
+  "
+/>
 </section>
 
       {/* =====================================================

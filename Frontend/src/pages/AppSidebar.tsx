@@ -26,6 +26,7 @@ import {
 import { cn } from '../lib/utills'
 import ThemeSwitcher from './ThemeSwitcher'
 import logo from '../assets/logo.png'
+import textlogo from '../assets/text-logo.png'  
 import {
   ProjectDialog,
   type ProjectDraft,
@@ -406,7 +407,7 @@ function AppSidebar() {
                 collapsed && 'md:justify-center',
               )}
             >
-              <img src={logo} alt="Consistent" className="size-7 shrink-0" />
+             
 
               <span
                 className={cn(
@@ -414,9 +415,11 @@ function AppSidebar() {
                   hideWhenCollapsed,
                 )}
               >
-                <span className="truncate text-lg font-semibold text-foreground">
-                  Consistent
-                </span>
+                <img
+  src={textlogo}
+  alt="Consistent"
+  className="h-5 w-auto object-contain object-left"
+/>
               </span>
             </button>
 

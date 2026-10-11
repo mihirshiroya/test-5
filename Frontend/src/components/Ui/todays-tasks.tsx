@@ -1,18 +1,72 @@
+import { useEffect, useMemo, useState } from "react"
+import type { CSSProperties } from "react"
 import {
   BookOpenCheck,
   CircleDashed,
   CircleCheck,
-  CalendarDays,
 } from "lucide-react"
 import {
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "./empty"
 import { useTodayTasks } from "../../store/slices/taskSlice"
+import { THEMES, themeSvg } from "../../lib/svg-theme"
+import getStartedRaw from "../../assets/01-streak-flame.svg?raw"
+
+/* ---------- Theme detection (follows your Tailwind `.dark` class) ---------- */
+function useIsDark() {
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    const root = document.documentElement
+    const mq = window.matchMedia("(prefers-color-scheme: dark)")
+
+    const update = () => {
+      if (root.classList.contains("dark")) return setIsDark(true)
+      if (root.classList.contains("light")) return setIsDark(false)
+      setIsDark(mq.matches) // no class set -> follow the OS
+    }
+
+    update()
+    const observer = new MutationObserver(update)
+    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme"] })
+    mq.addEventListener("change", update)
+
+    return () => {
+      observer.disconnect()
+      mq.removeEventListener("change", update)
+    }
+  }, [])
+
+  return isDark
+}
+
+/* ---------- Theme-aware inline SVG ---------- */
+function ThemedSvg({ raw, className }: { raw: string; className?: string }) {
+  const isDark = useIsDark()
+  const html = useMemo(() => themeSvg(raw), [raw]) // parse once
+  const t = THEMES[isDark ? "dark" : "light"]
+
+  const vars = {
+    "--svg-ink": t.ink,
+    "--svg-accent": t.accent,
+    "--svg-soft": t.soft,
+    "--svg-bg": "transparent", // blend with the card surface
+  } as CSSProperties
+
+  return (
+    <div
+      className={className}
+      style={vars}
+      role="img"
+      aria-label="Get started illustration"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
 
 function getPriorityClass(priority: string | undefined) {
   switch (priority?.toLowerCase()) {
@@ -34,7 +88,7 @@ function getDaysLeftText(deadlineDate: number | null) {
 
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  
+
   const target = new Date(deadlineDate)
   const deadlineDay = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime()
 
@@ -60,25 +114,19 @@ export function TodaysTasks() {
   const tasks = useTodayTasks()
 
   const completedCount = tasks.filter(
-    (task) =>
-      task.status === "completed" ||
-      task.completedAt != null,
+    (task) => task.status === "completed" || task.completedAt != null,
   ).length
 
   const pct =
-    tasks.length > 0
-      ? Math.round((completedCount / tasks.length) * 100)
-      : 0
+    tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0
 
   return (
-    // Fixed container height (e.g., h-[380px] or h-[420px])
+    // Fixed container height
     <div className="relative flex h-[420px] w-full flex-col overflow-hidden border-2 border-soft p-6 animate-fadeIn">
       {/* Header */}
       <div className="relative z-10 flex shrink-0 items-center justify-between">
         <div className="min-w-0">
-          <h3 className="text-heading-5 text-primary">
-            Today&apos;s tasks
-          </h3>
+          <h3 className="text-heading-5 text-primary">Today&apos;s tasks</h3>
 
           <p className="mt-1 text-body-sm text-steel">
             {tasks.length === 0
@@ -102,15 +150,15 @@ export function TodaysTasks() {
 
       {/* Empty state */}
       {tasks.length === 0 ? (
-        <Empty className="relative z-10 my-auto border-0 p-6">
+        <Empty className="relative z-10 my-auto border-0 p-0">
           <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <BookOpenCheck />
-            </EmptyMedia>
+            {/* Themed illustration replaces the icon */}
+            <ThemedSvg
+              raw={getStartedRaw}
+              className="mx-auto mb-2 h-40 w-40 [&>svg]:h-full [&>svg]:w-full"
+            />
 
-            <EmptyTitle>
-              No tasks for today
-            </EmptyTitle>
+            <EmptyTitle>No tasks for today</EmptyTitle>
 
             <EmptyDescription>
               You don&apos;t have any tasks scheduled for today.
@@ -124,17 +172,12 @@ export function TodaysTasks() {
         <div className="relative z-10 mt-4 min-h-0 flex-1 overflow-y-auto pr-1 no-scrollbar">
           <div className="flex flex-col gap-4">
             {tasks.map((task) => {
-              const done =
-                task.status === "completed" ||
-                task.completedAt != null
+              const done = task.status === "completed" || task.completedAt != null
 
               const deadlineInfo = getDaysLeftText(task.deadlineDate)
 
               return (
-                <div
-                  key={task.id}
-                  className="flex flex-col gap-1"
-                >
+                <div key={task.id} className="flex flex-col gap-1">
                   {/* Top Row: Name and Priority */}
                   <div className="flex items-center justify-between gap-3 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -148,9 +191,7 @@ export function TodaysTasks() {
 
                       <span
                         className={`truncate text-body-md-medium ${
-                          done
-                            ? "text-stone line-through"
-                            : "text-primary"
+                          done ? "text-stone line-through" : "text-primary"
                         }`}
                       >
                         {task.title}
