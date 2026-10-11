@@ -1,10 +1,11 @@
 import { useState } from "react"
-import { TrendingUp } from "lucide-react"
 import {
   type ComparisonMode,
   type SeriesPoint,
   formatMinutes,
 } from "../Ui/analytics-data"
+import { ThemedSvg } from "../../lib/svg-theme"
+import timeBlockingRaw from "../../assets/29-time-blocking.svg?raw"
 
 // Inline SVG fractal noise texture for the grain effect
 const GRAIN_TEXTURE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4'/%3E%3C/svg%3E")`
@@ -21,6 +22,7 @@ export function TrendChart({
   const data = mode === "today" ? daySeries : weekSeries
   const [hover, setHover] = useState<number | null>(null)
 
+  const hasFocusTime = data.some((d) => d.current > 0 || d.previous > 0)
   const max = Math.max(...data.flatMap((d) => [d.current, d.previous]), 1)
   const currentTotal = data.reduce((s, d) => s + d.current, 0)
   const prevTotal = data.reduce((s, d) => s + d.previous, 0)
@@ -45,24 +47,27 @@ export function TrendChart({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <Legend
-            gradientClass="bg-gradient-to-t from-primary/80 via-primary to-indigo-400"
-            label={currentLabel}
-          />
+        {hasFocusTime && (
+          <div className="flex items-center gap-4">
+            <Legend
+              gradientClass="bg-gradient-to-t from-primary/80 via-primary to-indigo-400"
+              label={currentLabel}
+            />
 
-          <Legend
-            gradientClass="bg-gradient-to-t from-zinc-600/30 via-zinc-400/30 to-zinc-200/40"
-            label={prevLabel}
-            outline
-          />
-        </div>
+            <Legend
+              gradientClass="bg-gradient-to-t from-zinc-600/30 via-zinc-400/30 to-zinc-200/40"
+              label={prevLabel}
+              outline
+            />
+          </div>
+        )}
       </div>
 
       {/* Chart */}
       <div className="relative min-h-0 pt-8">
-        <div className="flex h-full items-stretch gap-2 sm:gap-3">
-          {data.map((d, i) => {
+        {hasFocusTime ? (
+          <div className="flex h-full items-stretch gap-2 sm:gap-3">
+            {data.map((d, i) => {
             const active = hover === i
 
             return (
@@ -136,8 +141,21 @@ export function TrendChart({
                 </span>
               </div>
             )
-          })}
-        </div>
+            })}
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 text-center">
+            <ThemedSvg
+              raw={timeBlockingRaw}
+              ariaLabel="Time blocking illustration"
+              className="h-32 w-32"
+            />
+            <p className="text-sm text-secondary">No focus time recorded yet</p>
+            <p className="max-w-xs text-caption text-steel">
+              Start a focused task to see your time trends here.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
