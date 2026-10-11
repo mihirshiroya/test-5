@@ -4,8 +4,7 @@ import logo from '../../assets/logo.png';
 import halftoneBackground from '../../assets/auth-halftone.png';
 import textlogo from '../../assets/text-logo.png';
 import getstarted from '../../assets/28-get-started.svg?raw';
-import { THEMES, themeSvg } from "../../lib/svg-theme"
-import { useEffect, useMemo, useState } from "react"
+import { ThemedSvg } from "../../lib/svg-theme"
 
 
 interface AuthLayoutProps {
@@ -75,36 +74,6 @@ const CornerHandles: React.FC = () => (
     <Handle position="-right-[4px] -bottom-[4px]" />
   </>
 );
-
-/* ---------- Theme-aware inline SVG ---------- */
-function ThemedSvg({
-  raw,
-  className,
-}: {
-  raw: string
-  className?: string
-}) {
-  const html = useMemo(() => themeSvg(raw), [raw])
-
-  const t = THEMES.light
-
-  const vars = {
-    "--svg-ink": t.ink,
-    "--svg-accent": t.accent,
-    "--svg-soft": t.soft,
-    "--svg-bg": "transparent",
-  } as CSSProperties
-
-  return (
-    <div
-      className={className}
-      style={vars}
-      role="img"
-      aria-label="Get started illustration"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  )
-}
 
 /* Halftone dot texture layered over the blue-violet gradient (right panel) */
 const backgroundStyle: React.CSSProperties = {
