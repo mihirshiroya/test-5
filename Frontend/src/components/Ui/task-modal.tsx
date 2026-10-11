@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { X } from "lucide-react"
+import { Input } from './input'
 import { useTaskStore } from "../../store/slices/taskSlice.tsx"
 import type { Task, TaskPriority, TaskStatus } from "../../store/slices/taskSlice.tsx"
 
@@ -93,7 +94,7 @@ export function TaskModal({ task, createInStatus, createInWorkspaceId, onClose }
             {/* Title */}
             <label className={labelClass}>
               <span className="text-sm font-medium text-foreground">Title</span>
-              <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs doing?" className={fieldClass} />
+              <Input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs doing?" className={fieldClass} />
             </label>
 
             {/* Description */}
@@ -130,7 +131,7 @@ export function TaskModal({ task, createInStatus, createInWorkspaceId, onClose }
 
               <label className={labelClass}>
                 <span className="text-sm font-medium text-foreground">Planned duration (min)</span>
-                <input type="number" min={1} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldClass} />
+                <Input type="number" min={1} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldClass} />
               </label>
             </div>
 
@@ -147,13 +148,13 @@ export function TaskModal({ task, createInStatus, createInWorkspaceId, onClose }
             {/* Start date */}
             <label className={labelClass}>
               <span className="text-sm font-medium text-foreground">Start date</span>
-              <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldClass} />
+              <Input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={fieldClass} />
             </label>
 
             {/* Deadline */}
             <label className={labelClass}>
               <span className="text-sm font-medium text-foreground">Deadline date</span>
-              <input type="datetime-local" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className={fieldClass} />
+              <Input type="datetime-local" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className={fieldClass} />
             </label>
           </div>
         </div>

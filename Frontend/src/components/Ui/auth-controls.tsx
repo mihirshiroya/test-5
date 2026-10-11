@@ -1,5 +1,6 @@
 import { useId, type ComponentProps } from 'react';
 import { LoaderCircle } from 'lucide-react';
+import { Input as StyledInput } from './input';
 
 interface InputProps extends ComponentProps<'input'> {
   label: string;
@@ -19,7 +20,7 @@ export function Input({ label, error, helperText, id, className = '', ...props }
       <label htmlFor={inputId} className="auth-label">
         {label}
       </label>
-      <input
+      <StyledInput
         {...props}
         id={inputId}
         className={`auth-input ${className}`}

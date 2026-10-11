@@ -1,5 +1,3 @@
-import { useEffect, useMemo, useState } from "react"
-import type { CSSProperties } from "react"
 import {
   BookOpenCheck,
   CircleDashed,
@@ -13,60 +11,8 @@ import {
   EmptyTitle,
 } from "./empty"
 import { useTodayTasks } from "../../store/slices/taskSlice"
-import { THEMES, themeSvg } from "../../lib/svg-theme"
+import { ThemedSvg } from "../../lib/svg-theme"
 import getStartedRaw from "../../assets/01-streak-flame.svg?raw"
-
-/* ---------- Theme detection (follows your Tailwind `.dark` class) ---------- */
-function useIsDark() {
-  const [isDark, setIsDark] = useState(false)
-
-  useEffect(() => {
-    const root = document.documentElement
-    const mq = window.matchMedia("(prefers-color-scheme: dark)")
-
-    const update = () => {
-      if (root.classList.contains("dark")) return setIsDark(true)
-      if (root.classList.contains("light")) return setIsDark(false)
-      setIsDark(mq.matches) // no class set -> follow the OS
-    }
-
-    update()
-    const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme"] })
-    mq.addEventListener("change", update)
-
-    return () => {
-      observer.disconnect()
-      mq.removeEventListener("change", update)
-    }
-  }, [])
-
-  return isDark
-}
-
-/* ---------- Theme-aware inline SVG ---------- */
-function ThemedSvg({ raw, className }: { raw: string; className?: string }) {
-  const isDark = useIsDark()
-  const html = useMemo(() => themeSvg(raw), [raw]) // parse once
-  const t = THEMES[isDark ? "dark" : "light"]
-
-  const vars = {
-    "--svg-ink": t.ink,
-    "--svg-accent": t.accent,
-    "--svg-soft": t.soft,
-    "--svg-bg": "transparent", // blend with the card surface
-  } as CSSProperties
-
-  return (
-    <div
-      className={className}
-      style={vars}
-      role="img"
-      aria-label="Get started illustration"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  )
-}
 
 function getPriorityClass(priority: string | undefined) {
   switch (priority?.toLowerCase()) {

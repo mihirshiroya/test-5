@@ -9,6 +9,9 @@
 
 // ---- 1. Palette per theme (edit these to restyle everything) -------------
 
+import React, { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+
 export type ThemeName = 'light' | 'dark';
 
 export type ThemeColors = {
@@ -190,6 +193,72 @@ export function themeSvg(svgText: string): string {
     (role, originalColor) =>
       `var(--svg-${role},${originalColor})`,
   );
+}
+
+function useIsDarkTheme(): boolean {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const update = (): void => {
+      if (root.classList.contains('dark')) {
+        setIsDark(true);
+      } else if (root.classList.contains('light')) {
+        setIsDark(false);
+      } else {
+        setIsDark(mediaQuery.matches);
+      }
+    };
+
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['class', 'data-theme'],
+    });
+    mediaQuery.addEventListener('change', update);
+
+    return () => {
+      observer.disconnect();
+      mediaQuery.removeEventListener('change', update);
+    };
+  }, []);
+
+  return isDark;
+}
+
+export type ThemedSvgProps = {
+  raw: string;
+  className?: string;
+  ariaLabel?: string;
+  transparentBg?: boolean;
+};
+
+export function ThemedSvg({
+  raw,
+  className,
+  ariaLabel = 'Illustration',
+  transparentBg = true,
+}: ThemedSvgProps): ReactNode {
+  const isDark = useIsDarkTheme();
+  const html = useMemo(() => themeSvg(raw), [raw]);
+  const theme = THEMES[isDark ? 'dark' : 'light'];
+  const variables = {
+    '--svg-ink': theme.ink,
+    '--svg-accent': theme.accent,
+    '--svg-soft': theme.soft,
+    '--svg-bg': transparentBg ? 'transparent' : theme.bg,
+  } as CSSProperties;
+
+  return React.createElement('div', {
+    className,
+    style: variables,
+    role: 'img',
+    'aria-label': ariaLabel,
+    dangerouslySetInnerHTML: { __html: html },
+  });
 }
 
 export function applyTheme(

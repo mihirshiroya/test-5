@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '../../lib/utills'
 import { Button } from '../Ui/Button'
+import { Input } from './input'
 import {
   FOLDER_TINTS,
   FOLDER_ICONS,
@@ -123,7 +124,7 @@ export function ProjectDialog({
           Workspace name
         </label>
 
-        <input
+        <Input
           id="project-name"
           autoFocus
           value={name}
