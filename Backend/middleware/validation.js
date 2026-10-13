@@ -117,6 +117,11 @@ const updateProfileValidation = [
     .normalizeEmail()
     .withMessage('Please provide a valid email address'),
   
+  body('pfpFrame')
+    .optional()
+    .isString()
+    .trim(),
+  
   validate
 ];
 

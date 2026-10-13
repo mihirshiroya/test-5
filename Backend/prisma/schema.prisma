@@ -27,6 +27,8 @@ model User {
   passwordResetToken     String?
   passwordResetExpires   DateTime?
   emailVerificationToken String?
+  totalFocusHours        Int       @default(0)
+  pfpFrame               String    @default("none")
 
   refreshTokens          RefreshToken[]
   workspaces             Workspace[]

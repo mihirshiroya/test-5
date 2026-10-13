@@ -125,7 +125,7 @@ class UserController {
   static async updateUser(req, res) {
     try {
       const { id } = req.params;
-      const { firstName, lastName, email, role, isActive } = req.body;
+      const { firstName, lastName, email, role, isActive, pfpFrame } = req.body;
       const requestingUser = req.user;
 
       if (requestingUser.id !== id && requestingUser.role !== 'ADMIN') {
@@ -148,6 +148,7 @@ class UserController {
       if (requestingUser.role !== 'ADMIN') {
         if (firstName) updateData.firstName = firstName;
         if (lastName) updateData.lastName = lastName;
+        if (pfpFrame !== undefined) updateData.pfpFrame = pfpFrame;
         
         if (email && email !== user.email) {
           const existingUser = await prisma.user.findUnique({ where: { email } });

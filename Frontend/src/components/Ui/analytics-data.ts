@@ -72,6 +72,16 @@ export type ProjectSummary = {
   status: "Planning" | "In progress" | "Done"
 }
 
+export type Achievement = {
+  id: string
+  title: string
+  requiredHours: number
+  color: string
+  icon: string
+  unlocked: boolean
+  progress: number
+}
+
 export type ProfileAnalytics = {
   generatedAt: number
   stats: {
@@ -95,6 +105,10 @@ export type ProfileAnalytics = {
     delta: number
   }
   projects: ProjectSummary[]
+  achievements: Achievement[]
+  currentAchievement: Achievement | null
+  totalFocusHours: number
+  pfpFrame: string
 }
 
 export function formatMinutes(min: number): string {

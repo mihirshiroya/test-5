@@ -75,9 +75,6 @@ export default function NotchNavbar({
             max-w-[95vw]
             items-center
             gap-5
-            rounded-b-2xl
-            border-b-2
-            border-soft
             bg-mauve-950
             px-4
             py-1
@@ -96,13 +93,15 @@ export default function NotchNavbar({
             className="
               pointer-events-none
               absolute
-              bottom-[28px]
+              bottom-[0px]
               right-full
               overflow-hidden
+               h-[100%]
+                w-[100%]
             "
             style={{
-              width: radius,
-              height: radius,
+              // width: radius,
+              // height: radius,
               backgroundColor: barBg,
             }}
           >
@@ -114,9 +113,8 @@ export default function NotchNavbar({
                 h-[200%]
                 w-[200%]
                 rounded-t-full
-                border
-                border-soft
-                bg-[var(--color-background)]
+                 bg-[var(--color-background)]
+                 border-none
               "
             />
           </span>
@@ -129,13 +127,16 @@ export default function NotchNavbar({
             className="
               pointer-events-none
               absolute
-              bottom-[28px]
+              bottom-[0px]
               left-full
               overflow-hidden
+                 overflow-hidden
+               h-[100%]
+                w-[100%]
             "
             style={{
-              width: radius,
-              height: radius,
+              // width: radius,
+              // height: radius,
               backgroundColor: barBg,
             }}
           >
@@ -147,8 +148,6 @@ export default function NotchNavbar({
                 h-[200%]
                 w-[200%]
                 rounded-t-full
-                border
-                border-soft
                 bg-[var(--color-background)]
               "
             />
@@ -211,7 +210,7 @@ export default function NotchNavbar({
             fixed
             inset-0
             z-[105]
-            bg-black/30
+            bg-background
             backdrop-blur-[2px]
           "
           onClick={() => setSidebarOpen(false)}

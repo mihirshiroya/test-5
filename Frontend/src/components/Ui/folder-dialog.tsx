@@ -93,7 +93,7 @@ export function FolderDialog({
         type="button"
         aria-label="Close dialog"
         onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-background backdrop-blur-[2px]"
       />
 
       <div

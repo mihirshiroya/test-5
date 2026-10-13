@@ -21,6 +21,9 @@ export interface User {
   avatar?: string;
   lastLoginAt?: string;
 
+  totalFocusHours: number;
+  pfpFrame: string;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +81,7 @@ export interface UpdateProfileRequest {
   firstName?: string;
   lastName?: string;
   email?: string;
+  pfpFrame?: string;
 }
 
 export interface VerifyEmailRequest {

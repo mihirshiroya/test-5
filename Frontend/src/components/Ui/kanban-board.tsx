@@ -19,11 +19,12 @@ import {
 import {
   ChevronDownIcon,
   Plus,
-  ClipboardList,
   Search,
   X,
 } from "lucide-react"
 
+import noResultsRaw from "../../assets/31-no-results.svg?raw"
+import { ThemedSvg } from "../../lib/svg-theme"
 import { useTaskStore } from "../../store/slices/taskSlice.tsx"
 import {
   canCompleteTask,
@@ -990,9 +991,10 @@ const KanbanColumn = memo(
               {tasks.length === 0 &&
                 !snapshot.isDraggingOver && (
                   <div className="mt-8 flex flex-col items-center gap-2 py-6 text-center text-secondary">
-                    <ClipboardList
-                      size={28}
-                      aria-hidden="true"
+                    <ThemedSvg
+                      raw={noResultsRaw}
+                      ariaLabel={`${meta.title} has no tasks`}
+                      className="h-28 w-28 [&>svg]:h-full [&>svg]:w-full"
                     />
 
                     <p className="text-xs">

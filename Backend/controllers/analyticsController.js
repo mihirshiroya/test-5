@@ -509,6 +509,8 @@ class AnalyticsController {
         openSessions,
         workspaces,
         taskGroups,
+        userRecord,
+        totalFocusAgg,
       ] = await Promise.all([
         sessionsOverlapping(userId, rangeFrom, rangeTo),
         prisma.task.findMany({
@@ -530,7 +532,17 @@ class AnalyticsController {
           where: { userId },
           _count: { _all: true },
         }),
+        prisma.user.findUnique({ where: { id: userId }, select: { totalFocusHours: true, pfpFrame: true } }),
+        prisma.taskSession.aggregate({
+          where: { userId, endedAt: { not: null } },
+          _sum: { durationSeconds: true },
+        }),
       ]);
+
+      const allTimeFocusHours = Math.floor((totalFocusAgg._sum.durationSeconds || 0) / 3600);
+      if (allTimeFocusHours !== (userRecord?.totalFocusHours ?? 0)) {
+        await prisma.user.update({ where: { id: userId }, data: { totalFocusHours: allTimeFocusHours } });
+      }
 
       const focusMap = focusByDay(sessions, tz, now);
       const completedMap = countByDay(
@@ -599,6 +611,23 @@ class AnalyticsController {
         return { id: w.id, name: w.name, tint: w.tint, icon: w.icon, total, done, status };
       });
 
+      // ── Achievements (hours-based) ──
+      const ACHIEVEMENT_TIERS = [
+        { id: 'starter',    title: 'Starter Spark',    requiredHours: 1,    color: '#94a3b8', icon: 'spark' },
+        { id: 'bronze',     title: 'Bronze Spark',      requiredHours: 10,   color: '#CD7F32', icon: 'spark' },
+        { id: 'silver',     title: 'Silver Spark',      requiredHours: 25,   color: '#A8A9AD', icon: 'spark' },
+        { id: 'gold',       title: 'Golden Spark',      requiredHours: 50,   color: '#DAA520', icon: 'spark' },
+        { id: 'diamond',    title: 'Diamond Spark',     requiredHours: 100,  color: '#5B9BD5', icon: 'diamond' },
+        { id: 'platinum',   title: 'Platinum Spark',    requiredHours: 250,  color: '#8B5CF6', icon: 'crown' },
+        { id: 'legendary',  title: 'Legendary Spark',   requiredHours: 500,  color: '#F59E0B', icon: 'star' },
+      ];
+      const achievements = ACHIEVEMENT_TIERS.map(tier => ({
+        ...tier,
+        unlocked: allTimeFocusHours >= tier.requiredHours,
+        progress: Math.min(100, Math.round((allTimeFocusHours / tier.requiredHours) * 100)),
+      }));
+      const currentAchievement = [...achievements].reverse().find(a => a.unlocked) || null;
+
       return res.json({
         success: true,
         data: {
@@ -624,6 +653,10 @@ class AnalyticsController {
             delta: pctDelta(focusTotal, focusPrevTotal),
           },
           projects,
+          achievements,
+          currentAchievement,
+          totalFocusHours: allTimeFocusHours,
+          pfpFrame: userRecord?.pfpFrame ?? 'none',
         },
       });
     } catch (err) {

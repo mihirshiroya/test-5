@@ -541,13 +541,14 @@ static async verifyEmail(req, res) {
 
   static async updateProfile(req, res) {
     try {
-      const { firstName, lastName, email } = req.body;
+      const { firstName, lastName, email, pfpFrame } = req.body;
       const userId = req.user.id;
 
       const updateData = {};
 
       if (firstName) updateData.firstName = firstName;
       if (lastName) updateData.lastName = lastName;
+      if (pfpFrame !== undefined) updateData.pfpFrame = pfpFrame;
       if (email && email !== req.user.email) {
         const existingUser = await prisma.user.findUnique({
           where: { email }
